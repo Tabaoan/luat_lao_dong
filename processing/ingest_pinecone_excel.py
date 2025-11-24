@@ -20,7 +20,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "excel-index")
 
-EXCEL_FOLDER = r"C:\Users\tabao\Downloads\cong_viec_lam\temp_data"  # 🔹 Thay đường dẫn của bạn
+EXCEL_FOLDER = r"C:\Users\tabao\OneDrive\Desktop\cong_viec_lam\data"  
 EMBEDDING_DIM = 3072
 BATCH_SIZE = 50
 

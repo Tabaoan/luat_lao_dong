@@ -76,12 +76,8 @@ if EXCEL_FILE_PATH and Path(EXCEL_FILE_PATH).exists():
 else:
     print(f"⚠️ Không tìm thấy file Excel: {EXCEL_FILE_PATH}")
 
-# ===================== NEW CONSTANTS FOR DATA COLLECTION =====================
-CONTACT_TRIGGER_RESPONSE = 'Anh/chị vui lòng để lại tên và số điện thoại, chuyên gia của IIP sẽ liên hệ và giải đáp các yêu cầu của anh/chị ạ.'
-FIXED_RESPONSE_Q3 = 'Nếu bạn muốn biết thêm thông tin chi tiết về các cụm, hãy truy cập vào website https://iipmap.com/.'
 
-
-# ===================== SYSTEM PROMPT (Không thay đổi) =====================
+# ===================== SYSTEM PROMPT =====================
 PDF_READER_SYS = (
     "Bạn là một trợ lý AI pháp lý chuyên đọc hiểu và tra cứu các tài liệu được cung cấp "
     "(bao gồm: Luật, Nghị định, Quyết định, Thông tư, Văn bản hợp nhất, Quy hoạch, Danh mục khu công nghiệp, v.v.). "
@@ -97,59 +93,47 @@ PDF_READER_SYS = (
     
     "📘 NGUYÊN TẮC CHUNG KHI TRẢ LỜI:\n"
     "1) Phân loại câu hỏi:\n"
-    "   - Câu hỏi CHUNG CHUNG hoặc NGOÀI TÀI LIỆU: Trả lời ngắn gọn (1-3 câu), lịch sự, không đi sâu vào chi tiết.\n"
-    "   - Câu hỏi VỀ LUẬT/NGHỊ ĐỊNH hoặc TRONG TÀI LIỆU: Trả lời tất cả, đầy đủ, chi tiết, chính xác theo đúng nội dung tài liệu.\n\n"
+    "   - Câu hỏi CHUNG CHUNG hoặc NGOÀI TÀI LIỆU: Trả lời ngắn gọn (1-3 câu), lịch sự, không đi sâu vào chi tiết.\n"
+    "   - Câu hỏi VỀ LUẬT/NGHỊ ĐỊNH hoặc TRONG TÀI LIỆU: Trả lời tất cả, đầy đủ, chi tiết, chính xác theo đúng nội dung tài liệu.\n\n"
     
     "2) Phạm vi: Chỉ dựa vào nội dung trong các tài liệu đã được cung cấp; tuyệt đối không sử dụng hoặc suy diễn kiến thức bên ngoài.\n\n"
     
     "3) Nguồn trích dẫn: \n"
-    "   - Khi trả lời về luật, nghị định: Ghi rõ nguồn (ví dụ: Theo Điều X, Nghị định số Y/NĐ-CP...).\n"
-    "   - TUYỆT ĐỐI KHÔNG được ghi theo dạng [1], [2], [3]...\n"
-    "   - TUYỆT ĐỐI KHÔNG được sử dụng cụm từ: 'tài liệu PDF', 'trích từ tài liệu PDF', 'dưới đây là thông tin từ tài liệu PDF', hoặc các cụm tương tự.\n"
-    "   - Thay vào đó, nêu trực tiếp: 'Theo Luật Việc làm quy định...', 'Nghị định số X/NĐ-CP nêu rõ...'\n\n"
+    "   - Khi trả lời về luật, nghị định: Ghi rõ nguồn (ví dụ: Theo Điều X, Nghị định số Y/NĐ-CP...).\n"
+    "   - TUYỆT ĐỐI KHÔNG được ghi theo dạng [1], [2], [3]...\n"
+    "   - TUYỆT ĐỐI KHÔNG được sử dụng cụm từ: 'tài liệu PDF', 'trích từ tài liệu PDF', 'dưới đây là thông tin từ tài liệu PDF', hoặc các cụm tương tự.\n"
+    "   - Thay vào đó, nêu trực tiếp: 'Theo Luật Việc làm quy định...', 'Nghị định số X/NĐ-CP nêu rõ...'\n\n"
     
     "4) Ngôn ngữ: Sử dụng văn phong pháp lý, trung lập, rõ ràng và tôn trọng ngữ điệu hành chính.\n\n"
     
     "5) Trình bày: \n"
-    "   - Ưu tiên danh sách (số thứ tự hoặc gạch đầu dòng) để dễ theo dõi.\n"
-    "   - TUYỆT ĐỐI KHÔNG sử dụng ký hiệu in đậm (** hoặc __) trong bất kỳ phần trả lời nào.\n\n"
+    "   - Ưu tiên danh sách (số thứ tự hoặc gạch đầu dòng) để dễ theo dõi.\n"
+    "   - TUYỆT ĐỐI KHÔNG sử dụng ký hiệu in đậm (** hoặc __) trong bất kỳ phần trả lời nào.\n\n"
     
-    
-    "6 Nếu câu hỏi mơ hồ: Yêu cầu người dùng làm rõ hoặc bổ sung chi tiết để trả lời chính xác hơn.\n\n"
+    "6) Nếu câu hỏi mơ hồ: Yêu cầu người dùng làm rõ hoặc bổ sung chi tiết để trả lời chính xác hơn.\n\n"
     
     "🏭 QUY ĐỊNH RIÊNG ĐỐI VỚI CÁC KHU CÔNG NGHIỆP / CỤM CÔNG NGHIỆP:\n"
     "1) Nếu người dùng hỏi 'Tỉnh/thành phố nào có bao nhiêu khu hoặc cụm công nghiệp', "
     "hãy trả lời theo định dạng sau:\n"
-    "   - Số lượng khu/cụm công nghiệp trong tỉnh hoặc thành phố đó.\n"
-    "   - Danh sách tên của tất cả các khu/cụm.\n\n"
-    "   Ví dụ:\n"
-    "   'Tỉnh Bình Dương có 29 khu công nghiệp. Bao gồm:\n"
-    "   - Khu công nghiệp Sóng Thần 1\n"
-    "   - Khu công nghiệp VSIP 1\n"
-    "   - Khu công nghiệp Mỹ Phước 3\n"
-    "   ...'\n\n"
+    "   - Số lượng khu/cụm công nghiệp trong tỉnh hoặc thành phố đó.\n"
+    "   - Danh sách tên của tất cả các khu/cụm.\n\n"
+    "   Ví dụ:\n"
+    "   'Tỉnh Bình Dương có 29 khu công nghiệp. Bao gồm:\n"
+    "   - Khu công nghiệp Sóng Thần 1\n"
+    "   - Khu công nghiệp VSIP 1\n"
+    "   - Khu công nghiệp Mỹ Phước 3\n"
+    "   ...'\n\n"
     
-    "2) Nếu người dùng hỏi chi tiết về một khu/cụm công nghiệp cụ thể (lần đầu tiên), hãy trình bày đầy đủ thông tin (nếu có trong tài liệu), gồm:\n"
-    "   - Tên khu công nghiệp (kcn) / cụm công nghiệp (cnn)\n"
-    "   - Địa điểm (tỉnh/thành phố, huyện/thị xã)\n"
-    "   - Diện tích (ha hoặc m²)\n"
-    "   - Cơ quan quản lý / chủ đầu tư\n"
-    "   - Quyết định thành lập hoặc phê duyệt quy hoạch\n"
-    "   - Ngành nghề hoạt động chính\n"
-    "   - Tình trạng hoạt động (đang hoạt động / đang quy hoạch / đang xây dựng)\n"
-    "   - Các thông tin khác liên quan (nếu có)\n\n"
+    "2) Nếu người dùng hỏi chi tiết về một khu/cụm công nghiệp cụ thể, hãy trình bày đầy đủ thông tin (nếu có trong tài liệu), gồm:\n"
+    "   - Tên khu công nghiệp (kcn) / cụm công nghiệp (cnn)\n"
+    "   - Địa điểm (tỉnh/thành phố, huyện/thị xã)\n"
+    "   - Diện tích (ha hoặc m²)\n"
+    "   - Cơ quan quản lý / chủ đầu tư\n"
+    "   - Quyết định thành lập hoặc phê duyệt quy hoạch\n"
+    "   - Ngành nghề hoạt động chính\n"
+    "   - Tình trạng hoạt động (đang hoạt động / đang quy hoạch / đang xây dựng)\n"
+    "   - Các thông tin khác liên quan (nếu có)\n\n"
     
-    "3) Nếu người dùng tiếp tục hỏi chi tiết về các cụm hoặc khu công nghiệp (từ lần thứ hai trở đi), "
-    "hãy không liệt kê lại thông tin chi tiết, mà trả lời cố định như sau:\n"
-    f"'{FIXED_RESPONSE_Q3}'\n\n"
-    
-    "4) Nếu người dùng chỉ hỏi thống kê (ví dụ: 'Tỉnh Bắc Ninh có bao nhiêu cụm công nghiệp?'), "
-    "hãy luôn trả lời số lượng và liệt kê thật đầy đủ tên cụm/khu, KHÔNG được phép liệt kê thông tin chi tiết khác ngoài tên.\n\n"
-    
-    "5) Nếu người dùng hỏi câu ngoài phạm vi pháp luật hoặc khu/cụm công nghiệp "
-    "(ví dụ: hỏi về tuyển dụng, giá đất, đầu tư cá nhân, v.v.), "
-    "hãy trả lời nguyên văn như sau:\n"
-    f"'{CONTACT_TRIGGER_RESPONSE}'\n\n" 
 
     "🌐 QUY TẮC NGÔN NGỮ:\n"
     "- Luôn trả lời đúng theo NGÔN NGỮ của câu hỏi cuối cùng.\n"
@@ -158,96 +142,42 @@ PDF_READER_SYS = (
     "- Không được trả lời bằng tiếng Việt nếu người dùng không dùng tiếng Việt.\n"
     "- Không thay đổi chủ đề hoặc thêm thông tin ngoài tài liệu.\n"
     "- Bạn luôn sử dụng đúng ngôn ngữ được cung cấp trong metadata 'user_lang' của tin nhắn người dùng.\n\n"
+    
+    "🏢 QUY ĐỊNH RIÊNG ĐỐI VỚI CÁC YÊU CẦU LIÊN QUAN ĐẾN THUÊ ĐẤT / TÌM ĐẤT TRONG KCN – CCN:\n"
+    "1) Nếu người dùng hỏi về việc thuê đất, giá thuê, thủ tục thuê, điều kiện thuê, hồ sơ thuê đất, "
+    "hoặc quy trình thuê đất trong khu công nghiệp/cụm công nghiệp, bạn phải:\n"
+    "   - Trả lời ĐÚNG và CHI TIẾT theo nội dung có trong tài liệu (Luật, Nghị định, Quy hoạch, Quyết định…).\n"
+    "   - Nêu rõ căn cứ pháp lý (Ví dụ: Theo Điều X của Luật Đất đai 2013…, Theo Khoản Y Điều Z của Nghị định…).\n"
+    "   - Tuyệt đối KHÔNG suy đoán nếu tài liệu không đề cập.\n\n"
+
+    "2) Nếu người dùng hỏi về QUỸ ĐẤT TRỐNG trong KCN/CCN, diện tích còn cho thuê, hoặc tình trạng sẵn sàng cho thuê, "
+    "bạn chỉ được trả lời nếu thông tin đó CÓ TRONG TÀI LIỆU đã cung cấp.\n"
+    "   - Nếu tài liệu có thông tin → Trình bày đầy đủ.\n"
+    "   - Nếu tài liệu KHÔNG có → Trả lời lịch sự rằng tài liệu không có dữ liệu và khuyến nghị người dùng cung cấp thêm thông tin (nhưng không đưa thông tin ngoài tài liệu).\n\n"
+
+    "3) Nếu người dùng hỏi 'cụm công nghiệp/khu công nghiệp nào có thể thuê đất', "
+    "bạn phải:\n"
+    "   - Xác định trong tài liệu nơi nào có mô tả về tình trạng hoạt động hoặc quỹ đất.\n"
+    "   - Trả lời đúng theo thông tin đã ghi (ví dụ: đang hoạt động, đang quy hoạch, đã lấp đầy…).\n"
+    "   - Nếu tài liệu không nói rõ về khả năng cho thuê → chỉ trả lời theo tình trạng được nêu trong tài liệu, không suy diễn.\n\n"
+
+    "4) Nếu người dùng hỏi về quy trình thuê đất, phải mô tả theo luật:\n"
+    "   - Điều kiện được thuê đất.\n"
+    "   - Hồ sơ cần chuẩn bị.\n"
+    "   - Thẩm quyền phê duyệt.\n"
+    "   - Trình tự thực hiện (theo Luật Đất đai, Nghị định và văn bản liên quan… nếu đã nằm trong cơ sở dữ liệu).\n\n"
+
+    "5) Nếu người dùng hỏi về MỨC GIÁ thuê đất hoặc chi phí thuê đất:\n"
+    "   - Chỉ trả lời nếu nội dung này xuất hiện trong các tài liệu đã được index.\n"
+    "   - Nếu tài liệu không chứa thông tin → chỉ thông báo 'tài liệu không đề cập đến đơn giá hoặc giá thuê đất'.\n\n"
+    "6) Nếu người dùng hỏi về giới thiệu khu công nghiệp còn đất trống mà không nói rõ của tỉnh thành nào, thì hãy dựa vào câu hỏi trước khách hỏi tỉnh thành nào để trả lời.\n\n"
+    "Nếu câu trước không nhắc tỉnh thành nào thì lấy ngẫu nhiên một tỉnh thành để trả lơi.\n\n"
     "🎯 TÓM TẮT:\n"
     "- Câu hỏi chung chung/ngoài tài liệu → trả lời NGẮN GỌN.\n"
     "- Câu hỏi pháp luật/KCN/CCN → trả lời ĐẦY ĐỦ dựa trên tài liệu.\n"
     "- Luôn dịch câu trả lời sang ngôn ngữ của người dùng nếu họ không dùng tiếng Việt.\n"
 
 )
-
-# ===================== GOOGLE SHEET UTILS (THỰC TẾ) =====================
-def is_valid_phone(phone: str) -> bool:
-    """Kiểm tra số điện thoại chỉ chứa chữ số, khoảng trắng hoặc dấu gạch ngang (Tối thiểu 7 ký tự)."""
-    return re.match(r'^[\d\s-]{7,}$', phone.strip()) is not None
-
-def authenticate_google_sheet():
-    """Xác thực và trả về gspread client."""
-    global GOOGLE_SERVICE_ACCOUNT_FILE
-    if not GOOGLE_SERVICE_ACCOUNT_FILE or not Path(GOOGLE_SERVICE_ACCOUNT_FILE).exists():
-        print("❌ LỖI XÁC THỰC: Không tìm thấy file Service Account. Vui lòng kiểm tra GOOGLE_SERVICE_ACCOUNT_FILE trong .env")
-        return None
-    try:
-        # Sử dụng service_account_file để xác thực
-        gc = gspread.service_account(filename=GOOGLE_SERVICE_ACCOUNT_FILE)
-        return gc
-    except Exception as e:
-        print(f"❌ LỖI XÁC THỰC GOOGLE SHEET: {e}")
-        return None
-
-def save_contact_info(original_question: str, phone_number: str, name: str = ""):
-    """
-    Lưu thông tin liên hệ vào Google Sheet đã cấu hình.
-    """
-    global GOOGLE_SHEET_ID
-
-    print("\n" + "=" * 80)
-    #print("💾 ĐANG LƯU THÔNG TIN LIÊN HỆ VÀO GOOGLE SHEET...")
-    
-    gc = authenticate_google_sheet()
-    if gc is None:
-        print("❌ KHÔNG THỂ KẾT NỐI VỚI GOOGLE SHEET. Vui lòng kiểm tra lỗi xác thực.")
-        print("=" * 80 + "\n")
-        return
-
-    if not GOOGLE_SHEET_ID:
-        print("❌ LỖI CẤU HÌNH: Thiếu GOOGLE_SHEET_ID trong .env.")
-        print("=" * 80 + "\n")
-        return
-
-    try:
-        # 1. Mở Sheet bằng ID
-        sh = gc.open_by_key(GOOGLE_SHEET_ID)
-        
-
-        worksheet = sh.sheet1 
-        
-        # 3. Dữ liệu cần ghi
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        row_data = [
-            original_question,
-            phone_number,
-            name if name else "",
-            timestamp 
-        ]
-        
-        # 4. Ghi dữ liệu vào cuối sheet
-        worksheet.append_row(row_data)
-        
-        # 5. Kiểm tra và thêm tiêu đề nếu sheet trống (Tùy chọn)
-        try:
-            first_row = worksheet.row_values(1)
-            expected_headers = ["Câu Hỏi Khách Hàng", "Số Điện Thoại", "Tên", "Thời Gian Ghi Nhận"]
-            
-            # Nếu dòng 1 trống rỗng (không có giá trị nào)
-            if not any(first_row): 
-                 worksheet.update('A1:D1', [expected_headers])
-            # Có thể thêm logic cảnh báo nếu header không khớp, nhưng hiện tại ta bỏ qua.
-        except Exception as e:
-            # Bỏ qua lỗi kiểm tra header
-            pass
-        
-        #print(f"✅ Đã ghi nhận thông tin vào Google Sheet (ID: {GOOGLE_SHEET_ID}).")
-        print(f"1. Câu hỏi gốc: {original_question}")
-        print(f"2. Số điện thoại: {phone_number}")
-        print(f"3. Tên: {name if name else 'Không cung cấp'}")
-        
-    except gspread.exceptions.SpreadsheetNotFound:
-        print(f"❌ LỖI: Không tìm thấy Google Sheet với ID: {GOOGLE_SHEET_ID}. Vui lòng kiểm tra lại ID và quyền truy cập.")
-    except Exception as e:
-        print(f"❌ Lỗi khi ghi dữ liệu vào Google Sheet: {e}")
-        
-    print("=" * 80 + "\n")
 
 
 # ===================== VECTORDB UTILS (Pinecone) =====================
@@ -264,9 +194,11 @@ def build_context_from_hits(hits, max_chars: int = 6000) -> str:
         total += len(seg)
     return "\n\n".join(ctx)
 
+
 def get_existing_sources() -> set:
     """Lấy danh sách file đã có trong VectorDB (Pinecone - không hiệu quả, trả về rỗng)"""
     return set()
+
 
 def check_vectordb_exists() -> bool:
     """Kiểm tra xem Pinecone Index có tồn tại và có vectors không"""
@@ -298,6 +230,7 @@ def check_vectordb_exists() -> bool:
     except Exception as e:
         return False
 
+
 def get_vectordb_stats() -> Dict[str, Any]:
     """Lấy thông tin thống kê về VectorDB (Pinecone)"""
     global pc
@@ -328,6 +261,7 @@ def get_vectordb_stats() -> Dict[str, Any]:
             "sources": []
         }
 
+
 def load_vectordb():
     """Load VectorDB từ Pinecone Index (Chỉ Đọc)"""
     global vectordb, retriever, pc
@@ -355,8 +289,8 @@ def load_vectordb():
         current_dim = stats.get('dimension', 0)
         if current_dim != EMBEDDING_DIM:
             print(f"⚠️ CẢNH BÁO: Dimension không khớp!")
-            print(f"   Index: {current_dim} | Model: {EMBEDDING_DIM}")
-            print(f"   Điều này có thể gây lỗi khi query.")
+            print(f"   Index: {current_dim} | Model: {EMBEDDING_DIM}")
+            print(f"   Điều này có thể gây lỗi khi query.")
             
         # Khởi tạo vectordb và retriever
         vectordb = Pinecone(
@@ -374,8 +308,10 @@ def load_vectordb():
         retriever = None
         return None
 
+
 # ===================== CLEANING & RETRIEVAL =====================
 _URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
+
 
 def clean_question_remove_uris(text: str) -> str:
     """Làm sạch câu hỏi, loại bỏ URL và tên file PDF"""
@@ -384,29 +320,6 @@ def clean_question_remove_uris(text: str) -> str:
     toks = [t for t in toks if not t.lower().endswith(".pdf")]
     return " ".join(toks).strip()
 
-
-def is_detail_query(text: str) -> bool:
-    """Kiểm tra xem câu hỏi có phải là câu hỏi chi tiết về khu/cụm công nghiệp hay không"""
-    text_lower = text.lower()
-    keywords = ["nêu chi tiết", "chi tiết về", "thông tin chi tiết", "cụm công nghiệp", "khu công nghiệp"]
-    if any(k in text_lower for k in keywords):
-        if "thống kê" in text_lower:
-            return False
-        return True
-    return False
-
-def count_previous_detail_queries(history: List[BaseMessage]) -> int:
-    """Đếm số lần hỏi chi tiết về KCN/CCN đã được trả lời trước đó"""
-    count = 0
-    for i in range(len(history)):
-        current_message = history[i]
-        if isinstance(current_message, HumanMessage):
-            is_q = is_detail_query(current_message.content)
-            if is_q and i + 1 < len(history) and isinstance(history[i+1], AIMessage):
-                bot_response = history[i+1].content
-                if FIXED_RESPONSE_Q3 not in bot_response:
-                    count += 1
-    return count
 
 def convert_language(text: str, target_lang: str) -> str:
     """
@@ -441,10 +354,9 @@ def convert_language(text: str, target_lang: str) -> str:
         print(f"⚠️ Lỗi dịch ngôn ngữ: {e}")
         return text
 
-    
 
 def process_pdf_question(i: Dict[str, Any]) -> str:
-    """Xử lý câu hỏi từ người dùng"""
+    """Xử lý câu hỏi từ người dùng (ƯU TIÊN EXCEL → VECTORDB → LLM)"""
     global retriever
     
     message = i["message"]
@@ -452,127 +364,87 @@ def process_pdf_question(i: Dict[str, Any]) -> str:
 
     clean_question = clean_question_remove_uris(message)
     
-    # ================================
-    # 1️⃣ PHÁT HIỆN NGÔN NGỮ NGAY TỪ ĐẦU
-    # ================================
+    # 1️⃣ PHÁT HIỆN NGÔN NGỮ
     try:
         user_lang = detect(message)
     except:
-        user_lang = "vi"  # Default về tiếng Việt nếu không detect được
+        user_lang = "vi"
     
-    # ================================
-    # 2️⃣ ƯU TIÊN XỬ LÝ QUA EXCEL QUERY
-    # ================================
+    # 2️⃣ ƯU TIÊN XỬ LÝ BỞI EXCEL QUERY — ƯU TIÊN CAO NHẤT
     if excel_handler is not None:
         try:
             handled, excel_response = excel_handler.process_query(clean_question)
             if handled and excel_response:
-                # Dịch response từ Excel nếu cần
+                # Dịch nếu cần
                 if user_lang != "vi":
                     excel_response = convert_language(excel_response, user_lang)
                 return excel_response
         except Exception as e:
             print(f"⚠️ Lỗi Excel Query: {e}")
-    
-    # ================================
-    # 3️⃣ LOGIC QUY TẮC 3 (FIXED RESPONSE)
-    # ================================
-    if is_detail_query(clean_question):
-        count_detail_queries = count_previous_detail_queries(history)
-        if count_detail_queries >= 1: 
-            # Dịch FIXED_RESPONSE_Q3 nếu cần
-            response = FIXED_RESPONSE_Q3
-            if user_lang != "vi":
-                response = convert_language(response, user_lang)
-            return response
-    
-    # ================================
-    # 4️⃣ KIỂM TRA RETRIEVER
-    # ================================
+
+    # 3️⃣ KIỂM TRA VECTORDB
     if retriever is None:
-        error_msg = "❌ VectorDB chưa được load hoặc không có dữ liệu. Vui lòng kiểm tra lại Pinecone Index."
-        if user_lang != "vi":
-            error_msg = convert_language(error_msg, user_lang)
-        return error_msg
+        error_msg = "❌ VectorDB chưa được load hoặc không có dữ liệu."
+        return convert_language(error_msg, user_lang) if user_lang != "vi" else error_msg
     
     try:
-        # ================================
-        # 5️⃣ TÌM KIẾM TRONG VECTORDB
-        # ================================
+        # 4️⃣ TÌM KIẾM TRONG VECTORDB
         hits = retriever.invoke(clean_question)
         
         if not hits:
-            # Nếu không tìm thấy, trả lời chung chung
-            no_info_msg = "Xin lỗi, tôi không tìm thấy thông tin liên quan trong dữ liệu hiện có."
-            if user_lang != "vi":
-                no_info_msg = convert_language(no_info_msg, user_lang)
-            return no_info_msg
+            msg = "Xin lỗi, tôi không tìm thấy thông tin liên quan trong dữ liệu hiện có."
+            return convert_language(msg, user_lang) if user_lang != "vi" else msg
 
-        # ================================
-        # 6️⃣ XÂY DỰNG CONTEXT VÀ MESSAGES
-        # ================================
+        # 5️⃣ TẠO CONTEXT
         context = build_context_from_hits(hits, max_chars=6000)
         
-        # Tạo System Prompt với chỉ dẫn ngôn ngữ rõ ràng
-        system_prompt_with_lang = PDF_READER_SYS + f"\n\n🌍 QUAN TRỌNG: Người dùng đang sử dụng ngôn ngữ '{user_lang}'. Bạn PHẢI trả lời bằng ngôn ngữ '{user_lang}'."
+        # SYSTEM PROMPT (kèm yêu cầu ngôn ngữ)
+        system_prompt_with_lang = PDF_READER_SYS + f"\n\n🌍 Người dùng đang sử dụng ngôn ngữ '{user_lang}'. Hãy trả lời bằng ngôn ngữ này."
         
         messages = [SystemMessage(content=system_prompt_with_lang)]
         
-        # Thêm lịch sử (giới hạn 10 tin nhắn gần nhất)
+        # Lịch sử 10 đoạn gần nhất
         if history:
             messages.extend(history[-10:])
 
-        # Tạo user message với context
+        # USER MESSAGE KÈM CONTEXT
         user_message = f"""Câu hỏi: {clean_question}
 
 Nội dung liên quan từ tài liệu:
 {context}
 
-Hãy trả lời dựa trên các nội dung trên bằng ngôn ngữ '{user_lang}'."""
+Hãy trả lời dựa trên nội dung trên bằng ngôn ngữ '{user_lang}'."""
         
-        messages.append(
-            HumanMessage(
-                content=user_message,
-                additional_kwargs={"user_lang": user_lang}
-            )
-        )
-        
-        # ================================
-        # 7️⃣ GỌI LLM VÀ DỊCH NẾU CẦN
-        # ================================
+        messages.append(HumanMessage(content=user_message))
+
+        # 6️⃣ GỌI LLM
         response = llm.invoke(messages).content
 
-        # Kiểm tra lại ngôn ngữ response và dịch nếu cần
-        # (Đôi khi LLM vẫn trả lời sai ngôn ngữ dù đã prompt rõ)
-        if user_lang != "vi":
-            try:
-                response_lang = detect(response)
-                
-                if response_lang != user_lang:
-                    response = convert_language(response, user_lang)
-            except:
-                # Nếu không detect được, dịch luôn để chắc chắn
+        # 7️⃣ ĐẢM BẢO TRẢ LỜI ĐÚNG NGÔN NGỮ
+        try:
+            if detect(response) != user_lang:
                 response = convert_language(response, user_lang)
+        except:
+            response = convert_language(response, user_lang)
 
         return response
 
     except Exception as e:
-        print(f"❌ Lỗi: {e}")
-        error_msg = f"Xin lỗi, tôi gặp lỗi khi xử lý câu hỏi: {str(e)}"
-        if user_lang != "vi":
-            error_msg = convert_language(error_msg, user_lang)
-        return error_msg
+        msg = f"Xin lỗi, tôi gặp lỗi: {str(e)}"
+        return convert_language(msg, user_lang) if user_lang != "vi" else msg
 
 
 # ===================== MAIN CHATBOT =====================
 pdf_chain = RunnableLambda(process_pdf_question)
 store: Dict[str, ChatMessageHistory] = {}
 
+
 def get_history(session_id: str):
     """Lấy hoặc tạo lịch sử chat cho session"""
     if session_id not in store:
         store[session_id] = ChatMessageHistory()
     return store[session_id]
+
 
 chatbot = RunnableWithMessageHistory(
     pdf_chain,
@@ -581,16 +453,18 @@ chatbot = RunnableWithMessageHistory(
     history_messages_key="history"
 )
 
+
 def print_help():
     """In hướng dẫn sử dụng"""
     print("\n" + "="*60)
     print("📚 CÁC LỆNH CÓ SẴN:")
     print("="*60)
-    print(" - exit / quit  : Thoát chương trình")
-    print(" - clear        : Xóa lịch sử hội thoại")
-    print(" - status       : Kiểm tra trạng thái Pinecone Index")
-    print(" - help         : Hiển thị hướng dẫn này")
+    print(" - exit / quit  : Thoát chương trình")
+    print(" - clear        : Xóa lịch sử hội thoại")
+    print(" - status       : Kiểm tra trạng thái Pinecone Index")
+    print(" - help         : Hiển thị hướng dẫn này")
     print("="*60 + "\n")
+
 
 def handle_command(command: str, session: str) -> bool:
     """Xử lý các lệnh đặc biệt"""
@@ -609,7 +483,7 @@ def handle_command(command: str, session: str) -> bool:
     elif cmd == "status":
         stats = get_vectordb_stats()
         print("\n" + "="*60)
-        #print("📊 TRẠNG THÁI PINECONE INDEX (CHẾ ĐỘ CHỈ ĐỌC)")
+        print("📊 TRẠNG THÁI PINECONE INDEX")
         print("="*60)
         if stats["exists"]:
             print(f"✅ Trạng thái: Sẵn sàng")
@@ -629,30 +503,27 @@ def handle_command(command: str, session: str) -> bool:
     else:
         return True
 
+
 # ===================== AUTO LOAD WHEN IMPORTED =====================
 if __name__ != "__main__":
-    #print("📦 Tự động load Pinecone khi import app.py...")
+    print("📦 Tự động load Pinecone khi import app.py...")
     load_vectordb()
+
 
 # ===================== CLI =====================
 if __name__ == "__main__":
     session = "pdf_reader_session"
-    
-    # Biến quản lý trạng thái thu thập thông tin liên hệ
-    contact_collection_mode = False
-    original_question = ""
 
     # Kiểm tra môi trường
-    if not all([OPENAI__API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME, GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_FILE]):
+    if not all([OPENAI__API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME]):
         print("❌ LỖI CẤU HÌNH: Thiếu các biến môi trường cần thiết.")
-        print("Hãy kiểm tra: OPENAI, PINECONE, GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_FILE.")
+        print("Hãy kiểm tra: OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME.")
         exit(1)
 
     print("\n" + "="*80)
     print("🤖 CHATBOT PHÁP LÝ & KCN/CCN")
     print("="*80)
     print(f"☁️ Pinecone Index: {PINECONE_INDEX_NAME}")
-    print(f"📄 Google Sheet ID: {GOOGLE_SHEET_ID}")
     print("🔍 Tôi hỗ trợ: Luật Lao động & Luật Dân sự Việt Nam")
     print_help()
 
@@ -673,41 +544,6 @@ if __name__ == "__main__":
     # Main loop
     while True:
         try:
-            # --- Xử lý chế độ thu thập thông tin liên hệ (Bước 2) ---
-            if contact_collection_mode:
-                # Bỏ qua lịch sử chat cho quá trình thu thập thông tin
-                print("\n" + "-"*80)
-                print("📞 BƯỚC THU THẬP THÔNG TIN LIÊN HỆ")
-                print(f"❓ Câu hỏi gốc: '{original_question}'")
-                
-                # 1. Nhập Số điện thoại (Bắt buộc)
-                while True:
-                    phone_number = input("Vui lòng nhập SỐ ĐIỆN THOẠI (Bắt buộc): ").strip()
-                    if is_valid_phone(phone_number):
-                        break
-                    print("❌ Số điện thoại không hợp lệ. Vui lòng thử lại.")
-                
-                # 2. Nhập Tên (Tùy chọn)
-                name = input("Vui lòng nhập TÊN (Tùy chọn, Enter để bỏ qua): ").strip() or ""
-                
-                # 3. Thực hiện lưu trữ
-                save_contact_info(original_question, phone_number, name)
-                
-                # 4. Reset trạng thái
-                contact_collection_mode = False
-                original_question = ""
-                # Xóa câu hỏi gốc và phản hồi bot khỏi lịch sử để bot không bị lặp
-                history = get_history(session).messages
-                if len(history) >= 2:
-                    history.pop() 
-                    history.pop() 
-                
-                print("-" * 80)
-                print("💬 Tiếp tục cuộc trò chuyện thường (hoặc gõ 'exit' để thoát).")
-                continue 
-
-
-            # --- Xử lý Chatbot thông thường (Bước 1) ---
             message = input("👤 Bạn: ").strip()
             
             if not message:
@@ -717,29 +553,21 @@ if __name__ == "__main__":
             if not handle_command(message, session):
                 break
             
-            # Bỏ qua nếu là lệnh
-            if message.lower() in ["clear", "status", "help"]: 
+            # Bỏ qua
+                        # Bỏ qua nếu là lệnh
+            if message.lower() in ["clear", "status", "help"]:
                 continue
             
             # Xử lý câu hỏi thường
             print("🔎 Đang tìm kiếm trong Pinecone Index...")
-            
-            # Lưu câu hỏi trước khi gọi bot
-            current_query = message
-            
+
             response = chatbot.invoke(
-                {"message": current_query},
+                {"message": message},
                 config={"configurable": {"session_id": session}}
             )
             
             print(f"\n🤖 Bot: {response}\n")
             print("-" * 80 + "\n")
-            
-            # --- KIỂM TRA TRIGER THU THẬP THÔNG TIN ---
-            if response.strip() == CONTACT_TRIGGER_RESPONSE.strip():
-                contact_collection_mode = True
-                original_question = current_query
-                print("--- ĐÃ KÍCH HOẠT CHẾ ĐỘ THU THẬP THÔNG TIN ---")
 
         except KeyboardInterrupt:
             print("\n\n👋 Tạm biệt!")
