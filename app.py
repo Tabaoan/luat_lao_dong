@@ -21,7 +21,7 @@ from langchain_pinecone import Pinecone
 from excel_query import ExcelQueryHandler
 from data_processing.pipeline import process_pdf_question
 from law_db_query.handler import handle_law_article_query
-
+from law_db_query.router import route_message
 
 # ===================== ENV =====================
 OPENAI__API_KEY = os.getenv("OPENAI__API_KEY")
@@ -111,8 +111,8 @@ if EXCEL_FILE_PATH and Path(EXCEL_FILE_PATH).exists():
 
 # ===================== PIPELINE WRAPPER =====================
 pdf_chain = RunnableLambda(
-    lambda i: process_pdf_question(
-        i,
+    lambda i: route_message(
+        i["message"],
         llm=llm,
         lang_llm=lang_llm,
         retriever=retriever,
