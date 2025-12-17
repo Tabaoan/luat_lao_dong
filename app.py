@@ -22,6 +22,8 @@ from excel_query import ExcelQueryHandler
 from data_processing.pipeline import process_pdf_question
 from law_db_query.handler import handle_law_article_query
 from law_db_query.router import route_message
+from mst.router import is_mst_query
+from mst.handler import handle_mst_query
 
 # ===================== ENV =====================
 OPENAI__API_KEY = os.getenv("OPENAI__API_KEY")
@@ -221,7 +223,17 @@ if __name__ == "__main__":
                 continue
 
             print(" Đang truy vấn...")
-
+            # ====== CHECK MST INTENT ======
+            if is_mst_query(message):
+                mst_response = handle_mst_query(
+                    message=message,
+                    llm=llm,
+                    embedding=emb
+                )
+                if mst_response:
+                    print(f"\n🤖 Bot:\n{mst_response}\n")
+                    print("-" * 80)
+                    continue
             # ====== CHECK LAW ARTICLE INTENT ======
             law_response = handle_law_article_query(message)
 

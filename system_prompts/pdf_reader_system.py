@@ -75,6 +75,7 @@ PDF_READER_SYS = (
     "   - Ngày hoạt động hoặc ngày cấp phép\n"
     "   - Người đại diện pháp luật\n"
     "   - Các thông tin bổ sung khác (nếu có)\n"
+    "Trả lời theo thông tin mới nhất được đẩy lên tài liệu.\n"
     "Không được trả lời thiếu bất kỳ trường nào nếu dữ liệu có tồn tại.\n\n"
 
     " TÓM TẮT:\n"
@@ -83,3 +84,4 @@ PDF_READER_SYS = (
     "- Câu hỏi tra cứu mã số thuế → trả lời đủ 6 trường (MST, tên, địa chỉ, tình trạng, ngày hoạt động, người đại diện).\n"
     "- Luôn viết theo ngôn ngữ người dùng.\n"
 )
+
