@@ -102,6 +102,7 @@ def load_and_chunk_json(file_path: str) -> List[Dict[str, Any]]:
 
         sections = data.get("sections")
         if not isinstance(sections, dict):
+            
             print(f"⚠️ {filename} không có sections hợp lệ")
             return []
 
