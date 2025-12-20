@@ -9,270 +9,235 @@ load_dotenv(override=True)
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import Pinecone 
+from langchain_pinecone import Pinecone
 from pinecone import Pinecone as PineconeClient, PodSpec
 
 # ===================== CẤU HÌNH =====================
 OPENAI_API_KEY = os.getenv("OPENAI__API_KEY")
 OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI__EMBEDDING_MODEL")
+
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 
-EMBEDDING_DIM = 3072  
+EMBEDDING_DIM = 3072
 JSON_FOLDER = r"C:\Users\tabao\OneDrive\Desktop\cong_viec_lam\json"
-BATCH_SIZE = 30  
+BATCH_SIZE = 30
 
-# ===================== KHỞI TẠO =====================
-print("🔧 Đang khởi tạo Pinecone Client và Embedding...")
+# ===================== INIT =====================
+print("🔧 Khởi tạo Pinecone & Embedding...")
 
-if not all([OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT, PINECONE_INDEX_NAME]):
-    print("❌ LỖI: Thiếu biến môi trường bắt buộc!")
-    exit(1)
+if not all([
+    OPENAI_API_KEY,
+    OPENAI_EMBEDDING_MODEL,
+    PINECONE_API_KEY,
+    PINECONE_ENVIRONMENT,
+    PINECONE_INDEX_NAME
+]):
+    raise RuntimeError("❌ Thiếu biến môi trường")
 
 pc = PineconeClient(api_key=PINECONE_API_KEY)
-emb = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model=OPENAI_EMBEDDING_MODEL)
 
-print("✅ Đã khởi tạo thành công!\n")
+emb = OpenAIEmbeddings(
+    api_key=OPENAI_API_KEY,
+    model=OPENAI_EMBEDDING_MODEL
+)
 
-# ===================== HÀM HỖ TRỢ =====================
+print("✅ Sẵn sàng\n")
 
-def get_json_files_from_folder(folder_path: str) -> List[str]:
-    """Lấy tất cả file JSON trong folder."""
-    if not os.path.exists(folder_path):
-        print(f"⚠️ Folder không tồn tại: {folder_path}")
+# ===================== UTIL =====================
+
+def get_json_files_from_folder(folder: str) -> List[str]:
+    if not os.path.exists(folder):
         return []
-    
-    json_files = []
-    for file in os.listdir(folder_path):
-        if file.lower().endswith(".json"):
-            json_files.append(os.path.join(folder_path, file))
-    
-    return sorted(json_files)
+    return sorted(
+        os.path.join(folder, f)
+        for f in os.listdir(folder)
+        if f.lower().endswith(".json")
+    )
 
 
-def get_existing_sources_from_index(index_name: str) -> set:
-    """Lấy danh sách file đã có trong Index."""
-    try:
-        if index_name not in pc.list_indexes().names():
-            return set()
-        
-        index = pc.Index(index_name)
-        stats = index.describe_index_stats()
-        
-        if stats["total_vector_count"] == 0:
-            return set()
-
-        dummy_query = [0.0] * EMBEDDING_DIM
-        results = index.query(
-            vector=dummy_query,
-            top_k=50,
-            include_metadata=True
-        )
-        
-        sources = set()
-        for match in results.get("matches", []):
-            if "metadata" in match and "source" in match["metadata"]:
-                sources.add(match["metadata"]["source"])
-        
-        return sources
-    
-    except Exception as e:
-        print(f"⚠️ Lỗi khi lấy danh sách file từ Index: {e}")
-        return set()
-
-
-def create_or_get_index(index_name: str, force_recreate: bool = False):
-    """Tạo hoặc lấy Pinecone Index."""
-    
-    if force_recreate:
-        print(f"🗑️ Đang xóa Index '{index_name}' (nếu tồn tại)...")
-        if index_name in pc.list_indexes().names():
-            pc.delete_index(index_name)
-            print(f"✅ Đã xóa Index '{index_name}'")
-            time.sleep(3)
+def create_or_get_index(index_name: str, force: bool = False):
+    if force and index_name in pc.list_indexes().names():
+        print(f"🗑️ Xóa index {index_name}")
+        pc.delete_index(index_name)
+        time.sleep(3)
 
     if index_name not in pc.list_indexes().names():
-        print(f"🛠️ Đang tạo Index '{index_name}'...")
+        print(f"🛠️ Tạo index {index_name}")
         pc.create_index(
             name=index_name,
             dimension=EMBEDDING_DIM,
             metric="cosine",
             spec=PodSpec(environment=PINECONE_ENVIRONMENT)
         )
-        print(f"✅ Đã tạo Index '{index_name}'")
         time.sleep(5)
 
     return pc.Index(index_name)
 
+# ===================== LOAD + CHUNK JSON (01–99) =====================
 
 def load_and_chunk_json(file_path: str) -> List[Dict[str, Any]]:
-    """Đọc file JSON và tạo các document để nạp vào Pinecone."""
+    """
+    JSON format chuẩn:
+    {
+      "source": "...pdf",
+      "document": "Quyết định 36/2025/QĐ-TTg",
+      "content_type": "economic_system_sections_01_99",
+      "sections": {
+        "01": {
+          "section_code": "01",
+          "section_title": "...",
+          "text": "FULL TEXT"
+        },
+        ...
+      }
+    }
+    """
     filename = os.path.basename(file_path)
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        docs = []
-        for code, desc in data.items():
-            text = f"{code}: {desc}"
-
-            docs.append({
-                "text": text,
-                "metadata": {
-                    "source": filename,
-                    "code": code
-                }
-            })
+        sections = data.get("sections")
+        if not isinstance(sections, dict):
+            print(f"⚠️ {filename} không có sections hợp lệ")
+            return []
 
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,
-            chunk_overlap=0
+            chunk_size=3000,
+            chunk_overlap=300,
+            separators=["\n\n", "\n", ". ", " ", ""]
         )
 
-        final_docs = []
-        for doc in docs:
-            chunks = splitter.split_text(doc["text"])
+        docs: List[Dict[str, Any]] = []
+
+        for section_code, section in sections.items():
+            text = section.get("text", "").strip()
+            if not text:
+                continue
+
+            chunks = splitter.split_text(text)
+
             for i, chunk in enumerate(chunks):
-                final_docs.append({
+                docs.append({
                     "text": chunk,
-                    "metadata": {**doc["metadata"], "chunk_id": i}
+                    "metadata": {
+                        "source": filename,
+                        "original_source": data.get("source", ""),
+                        "document": data.get("document", ""),
+                        "content_type": data.get("content_type", ""),
+                        "section_code": section_code,
+                        "section_title": section.get("section_title", ""),
+                        "chunk_id": i
+                    }
                 })
 
-        return final_docs
+        return docs
 
     except Exception as e:
-        print(f"❌ Lỗi khi load JSON {filename}: {e}")
+        print(f"❌ Lỗi đọc JSON {filename}: {e}")
         return []
 
+# ===================== INGEST =====================
 
 def ingest_documents_to_pinecone(
     json_paths: List[str],
     index_name: str,
     force_reload: bool = False
 ):
-    print("="*70)
-    print("🚀 BẮT ĐẦU NẠP DỮ LIỆU JSON VÀO PINECONE")
-    print("="*70)
+    print("=" * 70)
+    print("🚀 INGEST JSON (01–99) → PINECONE")
+    print("=" * 70)
     print(f"📁 Folder: {JSON_FOLDER}")
-    print(f"📚 Tổng số file JSON: {len(json_paths)}")
-    print(f"☁️ Index: {index_name}")
-    print()
+    print(f"📚 File JSON: {len(json_paths)}")
+    print(f"☁️ Index: {index_name}\n")
 
-    index = create_or_get_index(index_name, force_recreate=force_reload)
+    index = create_or_get_index(index_name, force_reload)
 
-    if not force_reload:
-        existing_sources = get_existing_sources_from_index(index_name)
-        print(f"📊 File đã có trong Index: {len(existing_sources)}")
-    else:
-        existing_sources = set()
+    all_docs: List[Dict[str, Any]] = []
+    file_stats: Dict[str, int] = {}
 
-    target_files = {os.path.basename(p): p for p in json_paths}
+    print("📖 Load & chunk JSON...\n")
 
-    if force_reload:
-        files_to_load = target_files
-    else:
-        files_to_load = {
-            n: p for n, p in target_files.items()
-            if n not in existing_sources
-        }
-
-    print(f"📥 Sẽ nạp {len(files_to_load)} file mới.\n")
-
-    all_docs = []
-    file_stats = {}
-
-    for filename, path in files_to_load.items():
+    for path in json_paths:
+        filename = os.path.basename(path)
         print(f"📄 {filename}...", end=" ")
-        docs = load_and_chunk_json(path)
 
-        if docs:
-            all_docs.extend(docs)
-            file_stats[filename] = len(docs)
-            print(f"✓ {len(docs)} docs")
-        else:
-            print("✗ Lỗi")
+        docs = load_and_chunk_json(path)
+        if not docs:
+            print("✗")
+            continue
+
+        all_docs.extend(docs)
+        file_stats[filename] = len(docs)
+        print(f"✓ {len(docs)} chunks")
 
     if not all_docs:
-        print("❌ Không có document nào để nạp!")
-        return
+        raise RuntimeError("❌ Không có document để ingest")
 
-    print(f"\n📦 Tổng cộng {len(all_docs)} docs\n")
+    print(f"\n📦 Tổng chunks: {len(all_docs)}")
+    print("💾 Nạp Pinecone...\n")
 
-    print("💾 Đang nạp vào Pinecone...\n")
-    total_batches = (len(all_docs) + BATCH_SIZE - 1) // BATCH_SIZE
     vectordb = None
+    total_batches = (len(all_docs) + BATCH_SIZE - 1) // BATCH_SIZE
 
-    try:
-        for i in range(0, len(all_docs), BATCH_SIZE):
-            batch_docs = all_docs[i:i+BATCH_SIZE]
-            batch_num = (i // BATCH_SIZE) + 1
+    for i in range(0, len(all_docs), BATCH_SIZE):
+        batch = all_docs[i:i + BATCH_SIZE]
+        batch_no = (i // BATCH_SIZE) + 1
 
-            print(f"   📦 Batch {batch_num}/{total_batches} ({len(batch_docs)} docs)...", end=" ")
+        print(f"   📦 Batch {batch_no}/{total_batches} ({len(batch)} docs)...", end=" ")
 
-            if i == 0:
-                vectordb = Pinecone.from_texts(
-                    texts=[doc["text"] for doc in batch_docs],
-                    metadatas=[doc["metadata"] for doc in batch_docs],
-                    embedding=emb,
-                    index_name=index_name
-                )
-            else:
-                vectordb.add_texts(
-                    texts=[doc["text"] for doc in batch_docs],
-                    metadatas=[doc["metadata"] for doc in batch_docs]
-                )
+        texts = [d["text"] for d in batch]
+        metadatas = [d["metadata"] for d in batch]
 
-            print("✓")
-            time.sleep(1)
+        if vectordb is None:
+            vectordb = Pinecone.from_texts(
+                texts=texts,
+                metadatas=metadatas,
+                embedding=emb,
+                index_name=index_name
+            )
+        else:
+            vectordb.add_texts(
+                texts=texts,
+                metadatas=metadatas
+            )
 
-    except Exception as e:
-        print(f"\n❌ Lỗi khi nạp vào Pinecone: {e}")
-        return
+        print("✓")
+        time.sleep(1)
 
     stats = index.describe_index_stats()
 
-    print("\n" + "="*70)
-    print("📊 KẾT QUẢ CUỐI")
-    print("="*70)
-    print(f"   ✓ Tổng vectors: {stats['total_vector_count']}")
-    print(f"   ✓ File xử lý: {len(file_stats)}")
-    for filename, ct in file_stats.items():
-        print(f"   • {filename}: {ct} docs")
-    print("="*70)
-
+    print("\n" + "=" * 70)
+    print("📊 KẾT QUẢ")
+    print("=" * 70)
+    print(f"✅ Tổng vectors: {stats['total_vector_count']}")
+    print(f"📁 File xử lý: {len(file_stats)}")
+    for f, c in file_stats.items():
+        print(f"   • {f}: {c} chunks")
+    print("=" * 70)
 
 # ===================== MAIN =====================
+
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Nạp file JSON vào Pinecone Index"
-    )
-    parser.add_argument(
-        "--force-reload",
-        action="store_true",
-        help="Xóa và nạp lại toàn bộ Index"
-    )
-    parser.add_argument(
-        "--folder",
-        type=str,
-        default=JSON_FOLDER,
-        help=f"Đường dẫn folder chứa JSON (mặc định: {JSON_FOLDER})"
-    )
+    parser = argparse.ArgumentParser("Ingest JSON Quyết định 36 (01–99) → Pinecone")
+    parser.add_argument("--force-reload", action="store_true")
+    parser.add_argument("--folder", type=str, default=JSON_FOLDER)
 
     args = parser.parse_args()
 
     json_files = get_json_files_from_folder(args.folder)
 
     if not json_files:
-        print("❌ Không tìm thấy file JSON nào.")
-        exit(1)
+        raise RuntimeError("❌ Không tìm thấy file JSON")
 
     print(f"📄 Tìm thấy {len(json_files)} file JSON:")
-    for i, fpath in enumerate(json_files, 1):
-        print(f"   {i}. {os.path.basename(fpath)}")
+    for i, f in enumerate(json_files, 1):
+        print(f"   {i}. {os.path.basename(f)}")
     print()
 
     ingest_documents_to_pinecone(
@@ -281,4 +246,4 @@ if __name__ == "__main__":
         force_reload=args.force_reload
     )
 
-    print("\n🎉 HOÀN THÀNH!")
+    print("\n🎉 HOÀN THÀNH")

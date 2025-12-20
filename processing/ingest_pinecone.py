@@ -21,7 +21,7 @@ PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 
 EMBEDDING_DIM = 3072  
-PDF_FOLDER = r"C:\Users\tabao\OneDrive\Desktop\cong_viec_lam\temp_data"
+PDF_FOLDER = r"C:\Users\tabao\Downloads\qd36" 
 BATCH_SIZE = 30  
 
 # ===================== KHỞI TẠO =====================
@@ -135,7 +135,7 @@ def load_and_chunk_pdf(file_path: str) -> List:
         
         # Chunk documents
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=3000,  
+            chunk_size=4000,  
             chunk_overlap=300,
             separators=["\n\n", "\n", ". ", " ", ""]
         )
