@@ -24,6 +24,12 @@ from law_db_query.handler import handle_law_article_query
 from law_db_query.router import route_message
 from mst.router import is_mst_query
 from mst.handler import handle_mst_query
+
+# ===================== law count response=====================
+from law_db_query.handler import (
+    handle_law_article_query,
+    handle_law_count_query
+)
 # ===================== COMPARE 2018 =====================
 from msn_2018.retriever import load_vsic_2018_retriever
 # ===================== ENV =====================
@@ -244,11 +250,26 @@ if __name__ == "__main__":
                     print(f"\n🤖 Bot:\n{mst_response}\n")
                     print("-" * 80)
                     continue
-            # ====== CHECK LAW ARTICLE INTENT ======
-            law_response = handle_law_article_query(message)
 
-            if law_response:
-                print(f"\n🤖 Bot:\n{law_response}\n")
+            # ====== CHECK LAW COUNT INTENT (SQL → LLM) ======
+            payload = handle_law_count_query(message)
+            if isinstance(payload, dict):
+                response = chatbot.invoke(
+                    {
+                        "message": message,
+                        "law_count": payload["total_laws"]
+                    },
+                    config={"configurable": {"session_id": session}}
+                )
+                print(f"\n Bot:\n{response}\n")
+                print("-" * 80)
+                continue
+
+
+            # ====== CHECK LAW ARTICLE INTENT  ======
+            law_article_response = handle_law_article_query(message)
+            if law_article_response:
+                print(f"\n Bot:\n{law_article_response}\n")
                 print("-" * 80)
                 continue
 
