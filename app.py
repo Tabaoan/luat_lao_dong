@@ -2,8 +2,8 @@
 import os
 import sys
 from typing import Dict
-
 from pathlib import Path
+
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -20,33 +20,33 @@ from langchain_pinecone import Pinecone
 # Internal modules
 from excel_query import ExcelQueryHandler
 from data_processing.pipeline import process_pdf_question
-from law_db_query.handler import handle_law_article_query
-from law_db_query.router import route_message
-from mst.router import is_mst_query
-from mst.handler import handle_mst_query
-
-# ===================== law count response=====================
 from law_db_query.handler import (
     handle_law_article_query,
     handle_law_count_query
 )
-# ===================== COMPARE 2018 =====================
+from law_db_query.router import route_message
+from mst.router import is_mst_query
+from mst.handler import handle_mst_query
 from msn_2018.retriever import load_vsic_2018_retriever
+
 # ===================== ENV =====================
 OPENAI__API_KEY = os.getenv("OPENAI__API_KEY")
 OPENAI__EMBEDDING_MODEL = os.getenv("OPENAI__EMBEDDING_MODEL")
 OPENAI__MODEL_NAME = os.getenv("OPENAI__MODEL_NAME")
-OPENAI__TEMPERATURE = os.getenv("OPENAI__TEMPERATURE")
+OPENAI__TEMPERATURE = os.getenv("OPENAI__TEMPERATURE", "0")
 LANG_MODEL_API_KEY = os.getenv("LANG_MODEL_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 EXCEL_FILE_PATH = os.getenv("EXCEL_FILE_PATH")
+RUNNING_IN_API = os.getenv("RUNNING_IN_API", "false").lower() == "true"
+
 EMBEDDING_DIM = 3072
+
 # ===================== INIT LLM =====================
 llm = ChatOpenAI(
     api_key=OPENAI__API_KEY,
     model_name=OPENAI__MODEL_NAME,
-    temperature=float(OPENAI__TEMPERATURE) if OPENAI__TEMPERATURE else 0
+    temperature=float(OPENAI__TEMPERATURE)
 )
 
 lang_llm = ChatOpenAI(
@@ -61,11 +61,9 @@ emb = OpenAIEmbeddings(
     model=OPENAI__EMBEDDING_MODEL
 )
 
-
 # ===================== INIT PINECONE =====================
 if not PINECONE_API_KEY:
-    print("Thiếu PINECONE_API_KEY")
-    sys.exit(1)
+    raise RuntimeError("❌ Thiếu PINECONE_API_KEY")
 
 pc = PineconeClient(api_key=PINECONE_API_KEY)
 
@@ -74,31 +72,29 @@ retriever = None
 retriever_vsic_2018 = None
 
 
+# ===================== LOAD VECTOR DB =====================
 def load_vectordb():
     global vectordb, retriever, retriever_vsic_2018
 
-    # ===== VSIC 2025 (hiện hành) =====
+    if vectordb is not None:
+        return vectordb  # tránh init lại
+
     if PINECONE_INDEX_NAME not in pc.list_indexes().names():
-        print(f" Pinecone index '{PINECONE_INDEX_NAME}' không tồn tại")
-        return None
+        raise RuntimeError(f"Pinecone index '{PINECONE_INDEX_NAME}' không tồn tại")
 
     index = pc.Index(PINECONE_INDEX_NAME)
     stats = index.describe_index_stats()
 
     if stats["total_vector_count"] == 0:
-        print(" Pinecone index rỗng")
-        return None
+        raise RuntimeError("Pinecone index rỗng")
 
     vectordb = Pinecone(index=index, embedding=emb, text_key="text")
     retriever = vectordb.as_retriever(search_kwargs={"k": 15})
 
-    # ===== VSIC 2018 (đối chứng) =====
     try:
         retriever_vsic_2018 = load_vsic_2018_retriever(emb)
-        print(" VSIC 2018 retriever sẵn sàng")
-    except Exception as e:
+    except Exception:
         retriever_vsic_2018 = None
-        print(f" Không load được VSIC 2018: {e}")
 
     return vectordb
 
@@ -121,9 +117,8 @@ excel_handler = None
 if EXCEL_FILE_PATH and Path(EXCEL_FILE_PATH).exists():
     try:
         excel_handler = ExcelQueryHandler(EXCEL_FILE_PATH)
-        print(f" Excel loaded: {EXCEL_FILE_PATH}")
-    except Exception as e:
-        print(f" Không thể load Excel: {e}")
+    except Exception:
+        excel_handler = None
 
 
 # ===================== PIPELINE WRAPPER =====================
@@ -132,7 +127,7 @@ pdf_chain = RunnableLambda(
         i,
         llm=llm,
         lang_llm=lang_llm,
-        retriever=retriever,                 
+        retriever=retriever,
         retriever_vsic_2018=retriever_vsic_2018,
         excel_handler=excel_handler
     )
@@ -154,75 +149,25 @@ chatbot = RunnableWithMessageHistory(
     history_messages_key="history"
 )
 
-
-# ===================== CLI HELP =====================
-def print_help():
-    print("\n" + "=" * 60)
-    print(" CÁC LỆNH CÓ SẴN")
-    print("=" * 60)
-    print(" - exit / quit  : Thoát")
-    print(" - clear        : Xóa lịch sử hội thoại")
-    print(" - status       : Trạng thái Pinecone")
-    print(" - help         : Hướng dẫn")
-    print("=" * 60 + "\n")
+# ===================== AUTO INIT (API MODE) =====================
+if RUNNING_IN_API:
+    try:
+        print("🔄 [API MODE] Initializing VectorDB...")
+        load_vectordb()
+        print("✅ [API MODE] VectorDB ready")
+    except Exception as e:
+        print(f"❌ [API MODE] Init failed: {e}")
 
 
-def handle_command(command: str, session: str) -> bool:
-    cmd = command.lower().strip()
-
-    if cmd in {"exit", "quit"}:
-        print("\n Tạm biệt!")
-        return False
-
-    if cmd == "clear":
-        store.get(session, ChatMessageHistory()).clear()
-        print(" Đã xóa lịch sử\n")
-        return True
-
-    if cmd == "status":
-        stats = get_vectordb_stats()
-        print("\n" + "=" * 60)
-        if stats.get("exists"):
-            print(" Pinecone sẵn sàng")
-            print(f" Documents: {stats['total_documents']}")
-            print(f" Dimension: {stats['dimension']}")
-        else:
-            print(" Pinecone chưa sẵn sàng")
-            if "error" in stats:
-                print(f" {stats['error']}")
-        print("=" * 60 + "\n")
-        return True
-
-    if cmd == "help":
-        print_help()
-        return True
-
-    return True
-
-
-# ===================== AUTO LOAD =====================
-if __name__ != "__main__":
-    load_vectordb()
-
-
-# ===================== CLI MAIN =====================
-if __name__ == "__main__":
-    session = "pdf_reader_session"
-
-    if not all([OPENAI__API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME]):
-        print(" Thiếu biến môi trường bắt buộc")
-        sys.exit(1)
+# ===================== CLI MODE =====================
+def run_cli():
+    session = "cli_session"
 
     print("\n" + "=" * 80)
     print(" CHATBOT PHÁP LÝ & KCN/CCN")
     print("=" * 80)
-    print(f"Pinecone Index: {PINECONE_INDEX_NAME}\n")
-    print_help()
 
-    print(" Đang kết nối Pinecone...")
-    if load_vectordb() is None:
-        sys.exit(1)
-
+    load_vectordb()
     stats = get_vectordb_stats()
     print(f"VectorDB sẵn sàng ({stats['total_documents']} documents)\n")
 
@@ -232,26 +177,12 @@ if __name__ == "__main__":
             if not message:
                 continue
 
-            if not handle_command(message, session):
-                break
-
-            if message.lower() in {"clear", "status", "help"}:
+            # MST
+            if is_mst_query(message):
+                print(handle_mst_query(message, llm=llm, embedding=emb))
                 continue
 
-            print(" Đang truy vấn...")
-            # ====== CHECK MST INTENT ======
-            if is_mst_query(message):
-                mst_response = handle_mst_query(
-                    message=message,
-                    llm=llm,
-                    embedding=emb
-                )
-                if mst_response:
-                    print(f"\n🤖 Bot:\n{mst_response}\n")
-                    print("-" * 80)
-                    continue
-
-            # ====== CHECK LAW COUNT INTENT (SQL → LLM) ======
+            # Law count
             payload = handle_law_count_query(message)
             if isinstance(payload, dict):
                 response = chatbot.invoke(
@@ -261,31 +192,27 @@ if __name__ == "__main__":
                     },
                     config={"configurable": {"session_id": session}}
                 )
-                print(f"\n Bot:\n{response}\n")
-                print("-" * 80)
+                print(response)
                 continue
 
-
-            # ====== CHECK LAW ARTICLE INTENT  ======
-            law_article_response = handle_law_article_query(message)
-            if law_article_response:
-                print(f"\n Bot:\n{law_article_response}\n")
-                print("-" * 80)
+            # Law article
+            article = handle_law_article_query(message)
+            if article:
+                print(article)
                 continue
 
-            # ====== FALLBACK TO NORMAL CHATBOT ======
-            print(" Đang truy vấn...")
+            # Fallback
             response = chatbot.invoke(
                 {"message": message},
                 config={"configurable": {"session_id": session}}
             )
-
-            print(f"\n🤖 Bot: {response}\n")
-            print("-" * 80)
+            print(response)
 
         except KeyboardInterrupt:
-            print("\n Tạm biệt!")
+            print("\n👋 Tạm biệt!")
             break
 
-        except Exception as e:
-            print(f"\nLỗi: {e}\n")
+
+# ===================== ENTRY POINT =====================
+if __name__ == "__main__":
+    run_cli()
