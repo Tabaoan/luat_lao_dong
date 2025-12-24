@@ -69,7 +69,7 @@ async def home():
                 else "Not ready"
             )
         except Exception as e:
-            vectordb_status = f"Error: {e}"
+            vectordb_status = f"Error: {str(e)}"
 
     return {
         "status": "ok",
@@ -94,7 +94,7 @@ async def chat(data: Question):
         # 1️⃣ LAW COUNT – SQL FIRST
         # =========================
         law_count_response = handle_law_count_query(question)
-        if law_count_response:
+        if isinstance(law_count_response, str):
             return {
                 "answer": law_count_response
             }
@@ -103,13 +103,16 @@ async def chat(data: Question):
         # 2️⃣ MST – ƯU TIÊN CAO
         # =========================
         if is_mst_query(question):
-            answer = await run_in_threadpool(
+            mst_answer = await run_in_threadpool(
                 handle_mst_query,
                 message=question,
                 llm=app.llm,
                 embedding=app.emb
             )
-            return {"answer": answer}
+
+            return {
+                "answer": str(mst_answer)
+            }
 
         # =========================
         # 3️⃣ CHATBOT (RAG / PDF)
@@ -120,7 +123,15 @@ async def chat(data: Question):
             config={"configurable": {"session_id": "api_session"}}
         )
 
-        return {"answer": response}
+        # 🔒 CHỐT KIỂU DỮ LIỆU – BẮT BUỘC STRING
+        if isinstance(response, dict):
+            answer = response.get("output") or response.get("answer") or str(response)
+        else:
+            answer = str(response)
+
+        return {
+            "answer": answer
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
