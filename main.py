@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from mst.router import is_mst_query
 from mst.handler import handle_mst_query
+from law_db_query.handler import handle_law_count_query
 
 # ===============================
 # Import chatbot core (app.py)
@@ -89,7 +90,18 @@ async def chat(data: Question):
         raise HTTPException(status_code=400, detail="Question is empty")
 
     try:
-        # 1️⃣ MST – ưu tiên cao nhất
+        # =========================
+        # 1️⃣ LAW COUNT – SQL FIRST
+        # =========================
+        law_count_response = handle_law_count_query(question)
+        if law_count_response:
+            return {
+                "answer": law_count_response
+            }
+
+        # =========================
+        # 2️⃣ MST – ƯU TIÊN CAO
+        # =========================
         if is_mst_query(question):
             answer = await run_in_threadpool(
                 handle_mst_query,
@@ -99,21 +111,19 @@ async def chat(data: Question):
             )
             return {"answer": answer}
 
-        # 2️⃣ Chatbot chính (SYNC → threadpool)
+        # =========================
+        # 3️⃣ CHATBOT (RAG / PDF)
+        # =========================
         response = await run_in_threadpool(
             app.chatbot.invoke,
             {"message": question},
             config={"configurable": {"session_id": "api_session"}}
         )
 
-        if isinstance(response, str):
-            return {"answer": response}
-
-        return {"answer": str(response)}
+        return {"answer": response}
 
     except Exception as e:
-        print(f"❌ Chat error: {e}")
-        raise HTTPException(status_code=500, detail="Internal chatbot error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===============================
 # Status endpoint
