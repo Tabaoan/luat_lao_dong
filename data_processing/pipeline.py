@@ -9,27 +9,52 @@ from data_processing.context_builder import build_context_from_hits
 from system_prompts.pdf_reader_system import PDF_READER_SYS
 from data_processing.intent import is_vsic_code_query
 
+
+# ======================================================
+# NHẬN DIỆN CHÀO HỎI / CÂU HỎI CHUNG CHUNG
+# ======================================================
+def is_greeting_question(question: str) -> bool:
+    greetings = [
+        # VI
+        "xin chào", "chào", "chào bạn", "chào anh", "chào chị",
+        "bạn là ai", "bạn làm được gì", "giúp tôi", "giúp mình",
+        # EN
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+        "who are you", "what can you do", "help me"
+    ]
+    q = question.lower().strip()
+    return any(q == g or q.startswith(g) for g in greetings)
+
+
+GREETING_VI = (
+    "Xin chào! Mình là Chatbot Cổng việc làm Việt Nam. "
+    "Mình có thể giúp anh/chị tra cứu và giải thích các quy định pháp luật "
+    "(luật, nghị định, thông tư, quyết định...) liên quan đến lao động, việc làm, "
+    "dân sự, khu công nghiệp, cụm công nghiệp và các lĩnh vực pháp lý khác. "
+    "Anh/chị hãy nhập câu hỏi cụ thể hoặc mô tả tình huống nhé — "
+    "mình sẽ trả lời chính xác, đầy đủ và có dẫn nguồn pháp lý."
+)
+
+
+# ======================================================
+# NHẬN DIỆN LAO ĐỘNG / VIỆC LÀM / BHXH / DN
+# ======================================================
 def is_labor_related_question(question: str) -> bool:
     keywords = [
-        # Lao động – việc làm
         "lao động", "việc làm", "người lao động", "người sử dụng lao động",
         "hợp đồng lao động", "thử việc", "thời gian thử việc",
-
-        # Lương – thu nhập
         "tiền lương", "lương", "tiền công", "trả lương",
-
-        # Bảo hiểm
         "bảo hiểm xã hội", "bhxh", "bảo hiểm y tế", "bhyt",
         "bảo hiểm thất nghiệp", "bhtn",
-
-        # Doanh nghiệp
-        "doanh nghiệp", "công ty", "người sử dụng lao động"
+        "doanh nghiệp", "công ty"
     ]
-
     q = question.lower()
     return any(k in q for k in keywords)
 
-    
+
+# ======================================================
+# PIPELINE TRUNG TÂM
+# ======================================================
 def process_pdf_question(
     i: Dict[str, Any],
     *,
@@ -39,24 +64,24 @@ def process_pdf_question(
     retriever_vsic_2018=None,
     excel_handler=None
 ) -> str:
-    """
-    PIPELINE TRUNG TÂM:
-    - Điều phối mọi câu hỏi
-    - Backend cung cấp dữ liệu (SQL / Excel / Vector)
-    - LLM chỉ DIỄN ĐẠT theo system prompt
-    """
 
     # ============================
-    # 0️⃣ INPUT & CONTEXT
+    # 0️⃣ INPUT
     # ============================
     message = i["message"]
     history: List[BaseMessage] = i.get("history", [])
-
-    #  DỮ LIỆU HỆ THỐNG TRUYỀN TỪ BACKEND (NẾU CÓ)
-    law_count = i.get("law_count")  # int | None
+    law_count = i.get("law_count")
 
     clean_question = clean_question_remove_uris(message)
-    user_lang = detect_language_openai(message, lang_llm)
+    user_lang = detect_language_openai(clean_question, lang_llm)
+
+    # ============================
+    # 0️⃣.1 CHÀO HỎI
+    # ============================
+    if is_greeting_question(clean_question):
+        if user_lang == "vi":
+            return GREETING_VI
+        return convert_language(GREETING_VI, user_lang, lang_llm)
 
     # ============================
     # 1️⃣ ƯU TIÊN EXCEL
@@ -65,188 +90,131 @@ def process_pdf_question(
         handled, excel_response = excel_handler.process_query(clean_question)
         if handled and excel_response:
             return (
-                convert_language(excel_response, user_lang, lang_llm)
-                if user_lang != "vi"
-                else excel_response
+                excel_response
+                if user_lang == "vi"
+                else convert_language(excel_response, user_lang, lang_llm)
             )
 
     # ============================
-    # 2️⃣ NHÁNH RIÊNG: ĐẾM SỐ LƯỢNG LUẬT (SQL → LLM)
+    # 2️⃣ ĐẾM SỐ LƯỢNG LUẬT
     # ============================
     if law_count is not None:
         system_prompt = (
             PDF_READER_SYS
-            + f"\n\n Người dùng đang dùng ngôn ngữ: '{user_lang}'."
-            + "\n\n DỮ LIỆU HỆ THỐNG (BẮT BUỘC SỬ DỤNG):"
-              f"\n- TOTAL_LAWS = {law_count}"
+            + f"\n\nNgười dùng đang dùng ngôn ngữ: '{user_lang}'."
+            + f"\n\nDỮ LIỆU HỆ THỐNG:\n- TOTAL_LAWS = {law_count}"
         )
 
         messages = [SystemMessage(content=system_prompt)]
         if history:
             messages.extend(history[-10:])
 
-        messages.append(
-            HumanMessage(
-                content=f"""
+        messages.append(HumanMessage(
+            content=f"""
 Câu hỏi: {clean_question}
 
-Dữ liệu thống kê về số lượng văn bản luật đã được hệ thống cung cấp.
-Hãy trả lời ĐÚNG theo quy định đối với CÂU HỎI VỀ SỐ LƯỢNG VĂN BẢN PHÁP LUẬT.
-Hãy trả lời bằng ngôn ngữ: {user_lang}.
+Hãy trả lời đúng quy định đối với CÂU HỎI VỀ SỐ LƯỢNG VĂN BẢN PHÁP LUẬT.
+Trả lời bằng ngôn ngữ: {user_lang}.
 """
-            )
-        )
+        ))
 
         response = llm.invoke(messages).content
-        detected = detect_language_openai(response, lang_llm)
-        if detected != user_lang:
-            response = convert_language(response, user_lang, lang_llm)
-
-        return response
+        return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
 
     # ============================
-    # 3️⃣ XÁC ĐỊNH CÓ PHẢI MÃ NGÀNH KHÔNG
+    # 3️⃣ NHẬN DIỆN VSIC
     # ============================
     is_vsic_query = is_vsic_code_query(clean_question)
 
     # ============================
-    # 4️⃣ RAG BÌNH THƯỜNG (KHÔNG PHẢI MÃ NGÀNH)
+    # 4️⃣ RAG THƯỜNG
     # ============================
     if not is_vsic_query:
-        if retriever is None:
-            msg = "VectorDB chưa sẵn sàng."
-            return convert_language(msg, user_lang, lang_llm)
+        hits = retriever.invoke(clean_question) if retriever else []
+        has_context = bool(hits)
+        context = build_context_from_hits(hits) if has_context else ""
 
-        hits = retriever.invoke(clean_question)
-        if not hits:
-            msg = "Không tìm thấy thông tin liên quan."
-            return convert_language(msg, user_lang, lang_llm)
-
-        context = build_context_from_hits(hits)
-
-        system_prompt = (
-            PDF_READER_SYS
-            + f"\n\n Người dùng đang dùng ngôn ngữ: '{user_lang}'."
-        )
-
+        system_prompt = PDF_READER_SYS + f"\n\nNgười dùng đang dùng ngôn ngữ: '{user_lang}'."
         messages = [SystemMessage(content=system_prompt)]
         if history:
             messages.extend(history[-10:])
 
-#         messages.append(
-#             HumanMessage(
-#                 content=f"""
-# Câu hỏi: {clean_question}
-
-# Nội dung liên quan:
-# {context}
-
-# Hãy trả lời bằng ngôn ngữ: {user_lang}.
-# """
-#             )
-#         )
         labor_related = is_labor_related_question(clean_question)
 
-        if labor_related:
-            human_instruction = f"""
-        Câu hỏi: {clean_question}
+        if has_context and labor_related:
+            human = f"""
+Câu hỏi: {clean_question}
 
-        Nội dung liên quan:
-        {context}
+Nội dung liên quan:
+{context}
 
-        YÊU CẦU BẮT BUỘC KHI TRẢ LỜI:
-        - Trả lời đầy đủ, đúng nội dung pháp luật theo tài liệu đã cung cấp.
-        - Sau khi trả lời nội dung chính, PHẢI bổ sung các mục sau,
-        trình bày thành các đoạn RIÊNG BIỆT:
+Sau khi trả lời nội dung chính, PHẢI bổ sung:
+1) Rủi ro pháp lý có thể phát sinh
+2) Người hỏi cần thực hiện những bước tiếp theo nào
+3) Giấy tờ, hồ sơ, chứng cứ cần chuẩn bị (nếu có)
+4) Hậu quả pháp lý nếu thực hiện sai hoặc không tuân thủ
 
-        1) Rủi ro pháp lý có thể phát sinh
-        2) Người hỏi cần thực hiện những bước tiếp theo nào
-        3) Giấy tờ, hồ sơ, chứng cứ cần chuẩn bị (nếu có)
-        4) Hậu quả pháp lý nếu thực hiện sai hoặc không tuân thủ quy định
+Trả lời bằng ngôn ngữ: {user_lang}.
+"""
+        elif has_context:
+            human = f"""
+Câu hỏi: {clean_question}
 
-        - Nội dung bổ sung phải PHÙ HỢP TRỰC TIẾP với câu hỏi,
-        không nêu chung chung, không suy đoán ngoài tài liệu.
+Nội dung liên quan:
+{context}
 
-        Hãy trả lời bằng ngôn ngữ: {user_lang}.
-        """
+Hãy trả lời đầy đủ, chính xác theo tài liệu.
+Trả lời bằng ngôn ngữ: {user_lang}.
+"""
         else:
-            human_instruction = f"""
-        Câu hỏi: {clean_question}
+            human = f"""
+Câu hỏi: {clean_question}
 
-        Nội dung liên quan:
-        {context}
+Không tìm thấy quy định pháp luật trực tiếp trong dữ liệu hiện có.
+Hãy trả lời trung lập, giải thích phạm vi áp dụng,
+không bịa điều luật, không suy diễn.
 
-        Hãy trả lời đầy đủ, chính xác theo nội dung tài liệu đã cung cấp.
-        Hãy trả lời bằng ngôn ngữ: {user_lang}.
-        """
+Trả lời bằng ngôn ngữ: {user_lang}.
+"""
 
-        messages.append(HumanMessage(content=human_instruction))
-
+        messages.append(HumanMessage(content=human))
         response = llm.invoke(messages).content
-        detected = detect_language_openai(response, lang_llm)
-        if detected != user_lang:
-            response = convert_language(response, user_lang, lang_llm)
-
-        return response
+        return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
 
     # ============================
-    # 5️⃣ NHÁNH RIÊNG: MÃ NGÀNH (VSIC 2025 ↔ 2018)
+    # 5️⃣ VSIC 2025 ↔ 2018
     # ============================
-    if retriever is None:
-        msg = "VectorDB chưa sẵn sàng."
-        return convert_language(msg, user_lang, lang_llm)
-
-    # --- VSIC 2025 ---
-    hits_2025 = retriever.invoke(clean_question)
+    hits_2025 = retriever.invoke(clean_question) if retriever else []
     context_2025 = build_context_from_hits(hits_2025) if hits_2025 else (
-        " Mã ngành này không được quy định trong Hệ thống ngành kinh tế Việt Nam "
-        "ban hành theo Quyết định số 36/2025/QĐ-TTg."
+        "Mã ngành này không được quy định theo Quyết định số 36/2025/QĐ-TTg."
     )
 
-    # --- VSIC 2018 (đối chứng) ---
     context_2018 = ""
     if retriever_vsic_2018:
         hits_2018 = retriever_vsic_2018.invoke(clean_question)
         context_2018 = build_context_from_hits(hits_2018) if hits_2018 else (
-            " Mã ngành này không được quy định trong Hệ thống ngành kinh tế Việt Nam "
-            "ban hành theo Quyết định số 27/2018/QĐ-TTg."
+            "Mã ngành này không được quy định theo Quyết định số 27/2018/QĐ-TTg."
         )
 
-    system_prompt = (
-        PDF_READER_SYS
-        + f"\n\n Người dùng đang dùng ngôn ngữ: '{user_lang}'."
-        + "\n\n QUY ĐỊNH BẮT BUỘC:"
-          "\n- Đây là câu hỏi về MÃ NGÀNH KINH TẾ."
-          "\n- PHẢI trình bày RIÊNG từng hệ thống:"
-          "\n  (1) VSIC 2025 – hiện hành"
-          "\n  (2) VSIC 2018 – đối chứng"
-          "\n- PHẢI nêu rõ: giữ nguyên / thay đổi / không tồn tại."
-    )
-
+    system_prompt = PDF_READER_SYS + f"\n\nNgười dùng đang dùng ngôn ngữ: '{user_lang}'."
     messages = [SystemMessage(content=system_prompt)]
     if history:
         messages.extend(history[-10:])
 
-    messages.append(
-        HumanMessage(
-            content=f"""
+    messages.append(HumanMessage(
+        content=f"""
 Câu hỏi: {clean_question}
 
 Theo Quyết định số 36/2025/QĐ-TTg:
 {context_2025}
 
-Theo Quyết định số 27/2018/QĐ-TTg (đối chứng):
+Theo Quyết định số 27/2018/QĐ-TTg:
 {context_2018}
 
-Hãy trả lời đầy đủ, có cấu trúc so sánh rõ ràng.
-Hãy trả lời bằng ngôn ngữ: {user_lang}.
+Hãy trả lời có cấu trúc so sánh rõ ràng.
+Trả lời bằng ngôn ngữ: {user_lang}.
 """
-        )
-    )
+    ))
 
     response = llm.invoke(messages).content
-    detected = detect_language_openai(response, lang_llm)
-    if detected != user_lang:
-        response = convert_language(response, user_lang, lang_llm)
-
-    return response
+    return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
