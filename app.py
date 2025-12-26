@@ -142,11 +142,17 @@ from data_processing.pipeline import process_pdf_question
 def pdf_dispatch(i: Dict):
     """
     Dispatcher cho chatbot:
-    - Ưu tiên route_message (MST, law_count, law_article, VSIC, Excel...)
-    - Nếu route_message KHÔNG xử lý → fallback BẮT BUỘC sang process_pdf_question
+    - Đảm bảo VectorDB đã load
+    - Ưu tiên route_message
+    - Fallback bắt buộc sang process_pdf_question
     """
 
-    # 1️⃣ Thử route_message trước (giữ nguyên toàn bộ nhánh cũ)
+    global retriever, retriever_vsic_2018
+
+    if retriever is None:
+        load_vectordb()
+
+    # 1️⃣ Thử route_message trước
     result = route_message(
         i,
         llm=llm,
@@ -156,11 +162,10 @@ def pdf_dispatch(i: Dict):
         excel_handler=excel_handler
     )
 
-    # Nếu route_message đã trả lời hợp lệ → dùng luôn
     if isinstance(result, str) and result.strip():
         return result
 
-    # 2️⃣ Fallback bắt buộc → PDF pipeline
+    # 2️⃣ Fallback sang PDF pipeline
     return process_pdf_question(
         i,
         llm=llm,
@@ -169,6 +174,7 @@ def pdf_dispatch(i: Dict):
         retriever_vsic_2018=retriever_vsic_2018,
         excel_handler=excel_handler
     )
+
 
 
 pdf_chain = RunnableLambda(pdf_dispatch)
@@ -234,9 +240,9 @@ def handle_command(command: str, session: str) -> bool:
     return True
 
 
-# ===================== AUTO LOAD =====================
-if __name__ != "__main__":
-    load_vectordb()
+# # ===================== AUTO LOAD =====================
+# if __name__ != "__main__":
+#     load_vectordb()
 
 
 # ===================== CLI MAIN =====================
