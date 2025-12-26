@@ -9,7 +9,27 @@ from data_processing.context_builder import build_context_from_hits
 from system_prompts.pdf_reader_system import PDF_READER_SYS
 from data_processing.intent import is_vsic_code_query
 
+def is_labor_related_question(question: str) -> bool:
+    keywords = [
+        # Lao động – việc làm
+        "lao động", "việc làm", "người lao động", "người sử dụng lao động",
+        "hợp đồng lao động", "thử việc", "thời gian thử việc",
 
+        # Lương – thu nhập
+        "tiền lương", "lương", "tiền công", "trả lương",
+
+        # Bảo hiểm
+        "bảo hiểm xã hội", "bhxh", "bảo hiểm y tế", "bhyt",
+        "bảo hiểm thất nghiệp", "bhtn",
+
+        # Doanh nghiệp
+        "doanh nghiệp", "công ty", "người sử dụng lao động"
+    ]
+
+    q = question.lower()
+    return any(k in q for k in keywords)
+
+    
 def process_pdf_question(
     i: Dict[str, Any],
     *,
@@ -113,18 +133,54 @@ Hãy trả lời bằng ngôn ngữ: {user_lang}.
         if history:
             messages.extend(history[-10:])
 
-        messages.append(
-            HumanMessage(
-                content=f"""
-Câu hỏi: {clean_question}
+#         messages.append(
+#             HumanMessage(
+#                 content=f"""
+# Câu hỏi: {clean_question}
 
-Nội dung liên quan:
-{context}
+# Nội dung liên quan:
+# {context}
 
-Hãy trả lời bằng ngôn ngữ: {user_lang}.
-"""
-            )
-        )
+# Hãy trả lời bằng ngôn ngữ: {user_lang}.
+# """
+#             )
+#         )
+        labor_related = is_labor_related_question(clean_question)
+
+        if labor_related:
+            human_instruction = f"""
+        Câu hỏi: {clean_question}
+
+        Nội dung liên quan:
+        {context}
+
+        YÊU CẦU BẮT BUỘC KHI TRẢ LỜI:
+        - Trả lời đầy đủ, đúng nội dung pháp luật theo tài liệu đã cung cấp.
+        - Sau khi trả lời nội dung chính, PHẢI bổ sung các mục sau,
+        trình bày thành các đoạn RIÊNG BIỆT:
+
+        1) Rủi ro pháp lý có thể phát sinh
+        2) Người hỏi cần thực hiện những bước tiếp theo nào
+        3) Giấy tờ, hồ sơ, chứng cứ cần chuẩn bị (nếu có)
+        4) Hậu quả pháp lý nếu thực hiện sai hoặc không tuân thủ quy định
+
+        - Nội dung bổ sung phải PHÙ HỢP TRỰC TIẾP với câu hỏi,
+        không nêu chung chung, không suy đoán ngoài tài liệu.
+
+        Hãy trả lời bằng ngôn ngữ: {user_lang}.
+        """
+        else:
+            human_instruction = f"""
+        Câu hỏi: {clean_question}
+
+        Nội dung liên quan:
+        {context}
+
+        Hãy trả lời đầy đủ, chính xác theo nội dung tài liệu đã cung cấp.
+        Hãy trả lời bằng ngôn ngữ: {user_lang}.
+        """
+
+        messages.append(HumanMessage(content=human_instruction))
 
         response = llm.invoke(messages).content
         detected = detect_language_openai(response, lang_llm)
