@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import uvicorn
+import uuid
+session = f"api_{uuid.uuid4()}"
 from typing import Optional, Any
 from datetime import datetime
-# Import thư viện cần thiết cho việc chạy hàm đồng bộ (nếu chatbot là đồng bộ)
 from starlette.concurrency import run_in_threadpool 
 from mst.router import is_mst_query
 from mst.handler import handle_mst_query
@@ -76,8 +77,7 @@ app_fastapi = FastAPI(
 # 🔹 Cấu hình CORS Middleware
 # Cho phép tất cả các domain (origins=["*"]) hoặc domain cụ thể.
 origins = [
-    "*", # Cho phép tất cả domain gọi API này
-    # "https://chatbotlaodong.vn", # Nếu bạn chỉ muốn cho phép domain cụ thể
+    "*",
 ]
 
 app_fastapi.add_middleware(
