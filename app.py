@@ -18,12 +18,17 @@ from pinecone import Pinecone as PineconeClient
 from langchain_pinecone import Pinecone
 
 # Internal modules
-from excel_query import ExcelQueryHandler
+from excel_query.excel_query import ExcelQueryHandler
 from data_processing.pipeline import process_pdf_question
 from law_db_query.handler import handle_law_article_query
 from law_db_query.router import route_message
 from mst.router import is_mst_query
 from mst.handler import handle_mst_query
+# ===================== EXCEL VISUALIZE =====================
+from excel_visualize import (
+    is_excel_visualize_price_intent,
+    handle_excel_price_visualize
+)
 
 # ===================== law count response=====================
 from law_db_query.handler import (
@@ -90,7 +95,7 @@ def load_vectordb():
         return None
 
     vectordb = Pinecone(index=index, embedding=emb, text_key="text")
-    retriever = vectordb.as_retriever(search_kwargs={"k": 10})
+    retriever = vectordb.as_retriever(search_kwargs={"k": 4})
 
     # ===== VSIC 2018 (đối chứng) =====
     try:
@@ -290,7 +295,17 @@ if __name__ == "__main__":
                     print(f"\n Bot:\n{mst_response}\n")
                     print("-" * 80)
                     continue
-
+            # ================= EXCEL VISUALIZE PRICE INTENT =================
+            if is_excel_visualize_price_intent(message):
+                excel_price_response = handle_excel_price_visualize(
+                    message=message,
+                    excel_handler=excel_handler,
+                    #llm=llm
+                )
+                if excel_price_response:
+                    print(f"\n Bot:\n{excel_price_response}\n")
+                    print("-" * 80)
+                    continue
             # ====== CHECK LAW COUNT INTENT (SQL → LLM) ======
             payload = handle_law_count_query(message)
             if isinstance(payload, dict):

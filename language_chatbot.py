@@ -25,7 +25,7 @@ from pinecone import Pinecone as PineconeClient
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage 
 
 # EXCEL MODULE
-from excel_query import ExcelQueryHandler
+from excel_query.excel_query import ExcelQueryHandler
 
 # ❌ LOẠI BỎ LANGDETECT
 # from langdetect import detect

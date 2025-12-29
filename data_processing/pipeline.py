@@ -27,12 +27,14 @@ def is_greeting_question(question: str) -> bool:
 
 
 GREETING_VI = (
-    "Xin chào! Mình là Chatbot Cổng việc làm Việt Nam. "
-    "Mình có thể giúp anh/chị tra cứu và giải thích các quy định pháp luật "
-    "(luật, nghị định, thông tư, quyết định...) liên quan đến lao động, việc làm, "
-    "dân sự, khu công nghiệp, cụm công nghiệp và các lĩnh vực pháp lý khác. "
-    "Anh/chị hãy nhập câu hỏi cụ thể hoặc mô tả tình huống nhé — "
-    "mình sẽ trả lời chính xác, đầy đủ và có dẫn nguồn pháp lý."
+    "Xin chào Quý khách! ChatIIP là sản phẩm trong hệ sinh thái của CTCP IIP, "
+    "được đào tạo chuyên sâu nhằm cung cấp thông tin chính xác và đáng tin cậy "
+    "trong các lĩnh vực: pháp luật (luật, nghị định, thông tư, quyết định), "
+    "ngành nghề kinh doanh, mã số thuế và thông tin doanh nghiệp, kế toán - thuế, "
+    "lao động - việc làm, cũng như bất động sản công nghiệp "
+    "(khu công nghiệp, cụm công nghiệp, nhà xưởng cho thuê/bán và "
+    "các thủ tục pháp lý liên quan). "
+    "Quý khách vui lòng nhập câu hỏi hoặc mô tả nhu cầu cụ thể để ChatIIP hỗ trợ."
 )
 
 

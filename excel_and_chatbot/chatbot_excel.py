@@ -12,7 +12,7 @@ except ImportError:
     print("❌ Lỗi: Cần cài đặt thư viện 'gspread' (pip install gspread).")
     sys.exit(1)
 # ⬅️ THÊM IMPORT MODULE EXCEL
-from excel_query import ExcelQueryHandler
+from excel_query.excel_query import ExcelQueryHandler
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
