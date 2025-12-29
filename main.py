@@ -187,6 +187,7 @@ async def predict(data: Question):
 
             # Excel visualize trả JSON (KHÔNG phải text)
             return {
+                "answer": " Đã tạo biểu đồ so sánh giá theo yêu cầu.",
                 "type": "excel_visualize",
                 "payload": excel_result,
                 "requires_contact": False
