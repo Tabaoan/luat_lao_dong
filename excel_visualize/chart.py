@@ -35,6 +35,9 @@ def plot_price_bar_chart_base64(
     names = df["Tên rút gọn"].tolist()
     prices = df["Giá thuê đất"].tolist()
 
+    min_price = min(prices)
+    max_price = max(prices)
+
     # =========================
     # 2️⃣ Vị trí X – giãn cột
     # =========================
@@ -52,7 +55,7 @@ def plot_price_bar_chart_base64(
     plt.xticks(
         x,
         names,
-        rotation=90,     # 👈 xoay dọc
+        rotation=90,
         ha="center",
         fontsize=9
     )
@@ -65,24 +68,26 @@ def plot_price_bar_chart_base64(
     )
 
     # =========================
-    # 3️⃣ TRỤC Y BẮT ĐẦU TỪ 0
+    # 3️⃣ ÉP TRỤC Y BẮT ĐẦU TỪ 0
     # =========================
-    plt.ylim(bottom=0)
+    plt.ylim(0, max_price * 1.15)
+
+    yticks = sorted(set([0, min_price] + list(plt.yticks()[0])))
+    plt.yticks(yticks)
 
     # =========================
-    # 4️⃣ Hiển thị GIÁ trên đầu cột
+    # 4️⃣ Hiển thị GIÁ (CHỈ SỐ)
     # =========================
     for bar, price in zip(bars, prices):
         plt.text(
             bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 1,
-            f"{price} USD/m²",
+            bar.get_height() + max_price * 0.01,
+            f"{int(price)}",
             ha="center",
             va="bottom",
             fontsize=9
         )
 
-    
     plt.tight_layout()
 
     # =========================
