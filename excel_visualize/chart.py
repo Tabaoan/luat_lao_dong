@@ -1,9 +1,12 @@
 import matplotlib.pyplot as plt
 import io
 import base64
-import numpy as np
+from typing import Optional
 
 
+# =========================
+# 1️⃣ Làm sạch tên khu / cụm
+# =========================
 def _clean_name(name: str, province: str) -> str:
     n = name.lower()
     for kw in [
@@ -15,49 +18,79 @@ def _clean_name(name: str, province: str) -> str:
     return n.strip().title()
 
 
+# =========================
+# 2️⃣ Parse giá về số
+# =========================
+def _parse_price(value) -> Optional[float]:
+    """
+    - '120 USD/m²/năm' -> 120
+    - '85-95 USD/m²/năm' -> 90
+    """
+    if value is None:
+        return None
+
+    s = str(value).lower()
+    for kw in ["usd/m²/năm", "usd/m2/năm", "usd"]:
+        s = s.replace(kw, "")
+    s = s.strip()
+
+    # Trường hợp khoảng giá
+    if "-" in s:
+        try:
+            a, b = s.split("-")
+            return (float(a.strip()) + float(b.strip())) / 2
+        except Exception:
+            return None
+
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+# =========================
+# 3️⃣ Vẽ biểu đồ & trả base64
+# =========================
 def plot_price_bar_chart_base64(
     df,
     province: str,
     industrial_type: str
 ) -> str:
 
-    # =========================
-    # 1️⃣ Chuẩn hóa & sort
-    # =========================
     df = df.copy()
 
+    # Chuẩn hóa tên
     df["Tên rút gọn"] = df["Tên"].apply(
         lambda x: _clean_name(x, province)
     )
 
-    df = df.sort_values(by="Giá thuê đất", ascending=True)
+    # Chuẩn hóa giá
+    df["Giá số"] = df["Giá thuê đất"].apply(_parse_price)
+    df = df.dropna(subset=["Giá số"])
+
+    # Sort tăng dần
+    df = df.sort_values(by="Giá số", ascending=True)
 
     names = df["Tên rút gọn"].tolist()
-    prices = df["Giá thuê đất"].tolist()
-
-    min_price = min(prices)
-    max_price = max(prices)
+    prices = df["Giá số"].tolist()
 
     # =========================
-    # 2️⃣ Vị trí X – giãn cột
+    # Vẽ biểu đồ
     # =========================
-    x = np.arange(len(names)) * 1.3
-
-    plt.figure(figsize=(18, 6))
+    plt.figure(figsize=(20, 7))  # kéo dài biểu đồ
 
     bars = plt.bar(
-        x,
+        range(len(names)),
         prices,
         width=0.6
     )
 
-    # 👇 TÊN KHU / CỤM ĐỂ DỌC
+    # Trục X: chữ để dọc
     plt.xticks(
-        x,
+        range(len(names)),
         names,
         rotation=90,
-        ha="center",
-        fontsize=9
+        ha="center"
     )
 
     plt.xlabel("Khu / Cụm công nghiệp")
@@ -67,31 +100,29 @@ def plot_price_bar_chart_base64(
         f"So sánh giá thuê đất {industrial_type} – {province}"
     )
 
-    # =========================
-    # 3️⃣ ÉP TRỤC Y BẮT ĐẦU TỪ 0
-    # =========================
+    # Trục Y: bắt đầu từ 0
+    max_price = max(prices)
     plt.ylim(0, max_price * 1.15)
 
-    yticks = sorted(set([0, min_price] + list(plt.yticks()[0])))
-    plt.yticks(yticks)
-
     # =========================
-    # 4️⃣ Hiển thị GIÁ (CHỈ SỐ)
+    # Hiển thị giá trên đầu cột
     # =========================
-    for bar, price in zip(bars, prices):
+    for bar in bars:
+        height = bar.get_height()
         plt.text(
             bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + max_price * 0.01,
-            f"{int(price)}",
+            height,
+            f"{int(height)}",
             ha="center",
             va="bottom",
             fontsize=9
         )
 
-    plt.tight_layout()
+    # Tránh đè chữ
+    plt.subplots_adjust(bottom=0.35)
 
     # =========================
-    # 5️⃣ Xuất base64
+    # Xuất base64
     # =========================
     buffer = io.BytesIO()
     plt.savefig(buffer, format="png", dpi=150)
