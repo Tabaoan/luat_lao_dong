@@ -13,7 +13,6 @@ from mst.handler import handle_mst_query
 from law_db_query.handler import handle_law_count_query
 from excel_visualize import (
     is_excel_visualize_intent,
-    detect_excel_metric,
     handle_excel_visualize
 )
 # ===============================
@@ -180,18 +179,14 @@ async def predict(data: Question):
             }
 
         if is_excel_visualize_intent(question):
-            metric = detect_excel_metric(question)
-
             excel_result = await run_in_threadpool(
                 handle_excel_visualize,
                 message=question,
-                excel_handler=app.excel_handler,
-                metric=metric
+                excel_handler=app.excel_handler
             )
 
             return {
                 "type": "excel_visualize",
-                "metric": metric,
                 "payload": excel_result,
                 "requires_contact": False
             }
