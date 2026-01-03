@@ -2,7 +2,8 @@ import matplotlib.pyplot as plt
 import io
 import base64
 from typing import Optional
-
+import os
+from PIL import Image
 
 # =========================
 # 1️⃣ Làm sạch tên khu / cụm
@@ -48,6 +49,35 @@ def _parse_price(value) -> Optional[float]:
         return None
 
 
+def _add_logo_to_figure(fig, alpha=0.85, scale=0.12):
+    """
+    Thêm logo công ty vào góc phải trên của figure
+    """
+    logo_path = os.path.join(
+        os.path.dirname(__file__),
+        "assets",
+        "company_logo.png"
+    )
+
+    if not os.path.exists(logo_path):
+        return  # không có logo thì bỏ qua
+
+    logo = Image.open(logo_path)
+
+    # Resize logo theo tỉ lệ figure
+    fig_w, fig_h = fig.get_size_inches() * fig.dpi
+    new_width = int(fig_w * scale)
+    ratio = new_width / logo.size[0]
+    new_height = int(logo.size[1] * ratio)
+    logo = logo.resize((new_width, new_height), Image.LANCZOS)
+
+    fig.figimage(
+        logo,
+        xo=int(fig_w - new_width - 20),
+        yo=int(fig_h - new_height - 20),
+        alpha=alpha,
+        zorder=10
+    )
 # =========================
 # 3️⃣ Vẽ biểu đồ so sánh giá đất theo khu / cụm
 # =========================
@@ -77,7 +107,8 @@ def plot_price_bar_chart_base64(
     # =========================
     # Vẽ biểu đồ
     # =========================
-    plt.figure(figsize=(20, 7))  # kéo dài biểu đồ
+    fig = plt.figure(figsize=(20, 7))
+  # kéo dài biểu đồ
 
     bars = plt.bar(
         range(len(names)),
@@ -121,9 +152,9 @@ def plot_price_bar_chart_base64(
     # Tránh đè chữ
     plt.subplots_adjust(bottom=0.35)
 
-    # =========================
-    # Xuất base64
-    # =========================
+    # ===== THÊM LOGO =====
+    _add_logo_to_figure(fig)
+
     buffer = io.BytesIO()
     plt.savefig(buffer, format="png", dpi=150)
     plt.close()
