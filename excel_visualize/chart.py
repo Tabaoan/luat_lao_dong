@@ -4,7 +4,6 @@ import base64
 from typing import Optional
 import os
 from PIL import Image
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 
 # =========================
@@ -12,7 +11,11 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 # =========================
 def _clean_name(name: str, province: str) -> str:
     n = str(name).lower()
-    for kw in ["khu công nghiệp", "cụm công nghiệp", str(province).lower()]:
+    for kw in [
+        "khu công nghiệp",
+        "cụm công nghiệp",
+        str(province).lower()
+    ]:
         n = n.replace(kw, "")
     return n.strip().title()
 
@@ -48,44 +51,63 @@ def _parse_price(value) -> Optional[float]:
 
 
 # =========================
-# 3️⃣ Thêm logo vào góc phải trên
+# 3️⃣ Dán logo vào ảnh PNG (ăn chắc)
 # =========================
-def _add_logo_to_axes(ax, alpha: float = 0.9, zoom: float = 0.12) -> None:
+def _overlay_logo_on_png_bytes(
+    png_bytes: bytes,
+    alpha: float = 0.9,
+    scale: float = 0.12,
+    padding: int = 20
+) -> bytes:
     """
-    Thêm logo công ty vào góc phải trên của vùng plot (axes).
-    - alpha: độ trong suốt
-    - zoom: kích thước logo (0.08 nhỏ hơn, 0.15 to hơn)
+    Dán logo vào góc phải trên của ảnh PNG đã render từ matplotlib.
+
+    - alpha: độ trong suốt logo (0-1)
+    - scale: logo chiếm bao nhiêu % chiều rộng ảnh (vd 0.12 = 12%)
+    - padding: khoảng cách tới mép (px)
     """
     logo_path = os.path.join(os.path.dirname(__file__), "assets", "company_logo.png")
 
+    # Debug nhanh nếu cần:
+    # print("[LOGO PATH]", logo_path)
+    # print("[LOGO EXISTS]", os.path.exists(logo_path))
+
     if not os.path.exists(logo_path):
-        # Debug nhanh nếu deploy không thấy logo
-        # print(f"[LOGO] Not found: {logo_path}")
-        return
+        return png_bytes
 
     try:
+        base_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
         logo = Image.open(logo_path).convert("RGBA")
     except Exception:
-        return
+        return png_bytes
 
-    imagebox = OffsetImage(logo, zoom=zoom, alpha=alpha)
+    # Resize logo theo chiều rộng ảnh
+    new_w = max(1, int(base_img.size[0] * scale))
+    ratio = new_w / logo.size[0]
+    new_h = max(1, int(logo.size[1] * ratio))
+    logo = logo.resize((new_w, new_h), Image.LANCZOS)
 
-    ab = AnnotationBbox(
-        imagebox,
-        (1, 1),                 # góc phải trên
-        xycoords="axes fraction",
-        boxcoords="axes fraction",
-        box_alignment=(1, 1),
-        frameon=False,
-        pad=0.0,
-        zorder=100
-    )
+    # Apply alpha (giảm độ đậm của logo)
+    if alpha < 1.0:
+        r, g, b, a = logo.split()
+        a = a.point(lambda p: int(p * alpha))
+        logo = Image.merge("RGBA", (r, g, b, a))
 
-    ax.add_artist(ab)
+    # Vị trí góc phải trên
+    x = base_img.size[0] - new_w - padding
+    y = padding
+
+    # Paste logo (dùng chính alpha channel của logo)
+    base_img.paste(logo, (x, y), logo)
+
+    # Xuất lại PNG bytes
+    out = io.BytesIO()
+    base_img.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
 
 
 # =========================
-# 4️⃣ Vẽ biểu đồ so sánh giá đất theo khu / cụm (base64)
+# 4️⃣ Vẽ biểu đồ so sánh giá thuê đất (base64)
 # =========================
 def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     df = df.copy()
@@ -103,14 +125,9 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     names = df["Tên rút gọn"].tolist()
     prices = df["Giá số"].tolist()
 
-    # ===== Vẽ biểu đồ =====
     fig, ax = plt.subplots(figsize=(20, 7))
 
-    bars = ax.bar(
-        range(len(names)),
-        prices,
-        width=0.6
-    )
+    bars = ax.bar(range(len(names)), prices, width=0.6)
 
     ax.set_xticks(range(len(names)))
     ax.set_xticklabels(names, rotation=90, ha="center")
@@ -119,7 +136,7 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     ax.set_ylabel("USD / m² / năm")
     ax.set_title(f"So sánh giá thuê đất {industrial_type} – {province}")
 
-    # Trục Y: bắt đầu từ 0
+    # Trục Y bắt đầu từ 0
     max_price = max(prices) if prices else 0
     ax.set_ylim(0, max_price * 1.15 if max_price > 0 else 1)
 
@@ -138,16 +155,22 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     # Tránh đè chữ
     fig.subplots_adjust(bottom=0.35)
 
-    # ===== THÊM LOGO =====
-    _add_logo_to_axes(ax, alpha=0.9, zoom=0.12)
-
-    # ===== Xuất base64 =====
+    # Render ra PNG bytes
     buffer = io.BytesIO()
     fig.savefig(buffer, format="png", dpi=150)
     plt.close(fig)
 
-    buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("utf-8")
+    png_bytes = buffer.getvalue()
+
+    # Dán logo lên PNG (ăn chắc)
+    png_bytes = _overlay_logo_on_png_bytes(
+        png_bytes,
+        alpha=0.9,
+        scale=0.12,
+        padding=20
+    )
+
+    return base64.b64encode(png_bytes).decode("utf-8")
 
 
 # =========================
@@ -158,7 +181,7 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
 
     df["Tên rút gọn"] = df["Tên"].apply(lambda x: _clean_name(x, province))
 
-    # Chuẩn hóa diện tích (giả sử đã là số)
+    # Chuẩn hóa diện tích
     df = df.dropna(subset=["Tổng diện tích"])
     df = df.sort_values(by="Tổng diện tích", ascending=True)
 
@@ -197,12 +220,18 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
 
     fig.subplots_adjust(bottom=0.35)
 
-    # ===== THÊM LOGO =====
-    _add_logo_to_axes(ax, alpha=0.9, zoom=0.12)
-
     buffer = io.BytesIO()
     fig.savefig(buffer, format="png", dpi=150)
     plt.close(fig)
 
-    buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("utf-8")
+    png_bytes = buffer.getvalue()
+
+    # Dán logo lên PNG (ăn chắc)
+    png_bytes = _overlay_logo_on_png_bytes(
+        png_bytes,
+        alpha=0.9,
+        scale=0.12,
+        padding=20
+    )
+
+    return base64.b64encode(png_bytes).decode("utf-8")
