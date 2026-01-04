@@ -166,7 +166,7 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     png_bytes = _overlay_logo_on_png_bytes(
         png_bytes,
         alpha=0.9,
-        scale=0.12,
+        scale=0.08,
         padding=20
     )
 
