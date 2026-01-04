@@ -4,7 +4,7 @@ import base64
 from typing import Optional
 import os
 from PIL import Image
-
+from datetime import datetime
 
 # =========================
 # 1️⃣ Làm sạch tên khu / cụm
@@ -105,9 +105,31 @@ def _overlay_logo_on_png_bytes(
     base_img.convert("RGB").save(out, format="PNG")
     return out.getvalue()
 
+# =========================
+#  Đo thời gian hiện tại
+# =========================
+def _add_footer(fig):
+    now = datetime.now()
+    footer_text = (
+        f"Biểu đồ được tạo bởi ChatIIP.com lúc "
+        f"{now.hour:02d} giờ {now.minute:02d} phút "
+        f"ngày {now.day:02d} tháng {now.month:02d} năm {now.year}, "
+        f"dữ liệu lấy từ IIPMap.com"
+    )
+
+    fig.text(
+        0.5,            # căn giữa ngang
+        0.02,           # vị trí sát đáy
+        footer_text,
+        ha="center",
+        va="center",
+        fontsize=9,
+        style="italic",
+        color="gray"
+    )
 
 # =========================
-# 4️⃣ Vẽ biểu đồ so sánh giá thuê đất (base64)
+# 5 Vẽ biểu đồ so sánh giá thuê đất (base64)
 # =========================
 def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     df = df.copy()
@@ -228,7 +250,10 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
             fontsize=9
         )
 
-    fig.subplots_adjust(bottom=0.35)
+    fig.subplots_adjust(bottom=0.45)
+
+    # Thêm footer
+    _add_footer(fig)
 
     buffer = io.BytesIO()
     fig.savefig(buffer, format="png", dpi=150)
@@ -240,7 +265,7 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     png_bytes = _overlay_logo_on_png_bytes(
         png_bytes,
         alpha=0.9,
-        scale=0.12,
+        scale=0.08,
         padding=20
     )
 
