@@ -23,7 +23,7 @@ def is_greeting_question(question: str) -> bool:
         "who are you", "what can you do", "help me"
     ]
     q = question.lower().strip()
-    return any(q in g or q.startswith(g) for g in greetings)
+    return any(q == g or q.startswith(g) for g in greetings)
 
 
 GREETING_VI = (
@@ -169,19 +169,15 @@ Hãy trả lời đầy đủ, chính xác theo tài liệu.
 Trả lời bằng ngôn ngữ: {user_lang}.
 """
         else:
-            # ✅ CHỈ SỬA ĐOẠN NÀY: nếu không liên quan / không rõ / không có căn cứ phù hợp → trả theo mẫu yêu cầu
-            out_of_scope_vi = (
-                "Tôi là chatbot chuyên tư vấn và tra cứu thông tin trong các lĩnh vực: "
-                "pháp luật (luật, nghị định, thông tư, quyết định), "
-                "ngành nghề kinh doanh, mã số thuế và thông tin doanh nghiệp, "
-                "kế toán – thuế, lao động – việc làm, "
-                "cũng như bất động sản công nghiệp "
-                "(khu công nghiệp, cụm công nghiệp, nhà xưởng cho thuê/bán "
-                "và các thủ tục pháp lý liên quan). "
-                "Tôi chỉ hỗ trợ các câu hỏi thuộc những lĩnh vực nêu trên; "
-                "bạn vui lòng đặt câu hỏi phù hợp để tôi có thể hỗ trợ chính xác."
-            )
-            return out_of_scope_vi if user_lang == "vi" else convert_language(out_of_scope_vi, user_lang, lang_llm)
+            human = f"""
+Câu hỏi: {clean_question}
+
+Không tìm thấy quy định pháp luật trực tiếp trong dữ liệu hiện có.
+Hãy trả lời trung lập, giải thích phạm vi áp dụng,
+không bịa điều luật, không suy diễn.
+
+Trả lời bằng ngôn ngữ: {user_lang}.
+"""
 
         messages.append(HumanMessage(content=human))
         response = llm.invoke(messages).content
