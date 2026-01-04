@@ -5,7 +5,7 @@ from typing import Optional
 import os
 from PIL import Image
 from datetime import datetime
-
+import pytz
 # =========================
 # 1️⃣ Làm sạch tên khu / cụm
 # =========================
@@ -109,7 +109,9 @@ def _overlay_logo_on_png_bytes(
 #  Đo thời gian hiện tại
 # =========================
 def _add_footer(fig):
-    now = datetime.now()
+    tz_vn = pytz.timezone("Asia/Ho_Chi_Minh")
+    now = datetime.now(tz_vn)
+
     footer_text = (
         f"Biểu đồ được tạo bởi ChatIIP.com lúc "
         f"{now.hour:02d} giờ {now.minute:02d} phút "
@@ -118,14 +120,13 @@ def _add_footer(fig):
     )
 
     fig.text(
-        0.5,            # căn giữa ngang
-        0.02,           # vị trí sát đáy
+        0.5,            # căn giữa
+        0.025,          
         footer_text,
         ha="center",
         va="center",
-        fontsize=9,
-        style="italic",
-        color="gray"
+        fontsize=12,     # 👈 CHỮ TO HƠN
+        color="black"    # 👈 MÀU ĐEN
     )
 
 # =========================
