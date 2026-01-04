@@ -66,7 +66,7 @@ def _overlay_logo_on_png_bytes(
     - scale: logo chiếm bao nhiêu % chiều rộng ảnh (vd 0.12 = 12%)
     - padding: khoảng cách tới mép (px)
     """
-    logo_path = os.path.join(os.path.dirname(__file__), "assets", "company_logo.png")
+    logo_path = os.path.join(os.path.dirname(__file__), "assets", "company_logos.png")
 
     # Debug nhanh nếu cần:
     # print("[LOGO PATH]", logo_path)
