@@ -1,12 +1,11 @@
 import matplotlib.pyplot as plt
 import io
 import base64
+from typing import Optional
 import os
 from PIL import Image
 from datetime import datetime
 import pytz
-import numpy as np
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 
 # =========================
@@ -39,6 +38,7 @@ def _overlay_logo_on_png_bytes(
     - scale: logo chiếm bao nhiêu % chiều rộng ảnh (vd 0.08 = 8%)
     - padding: khoảng cách tới mép (px)
     """
+    # ✅ Đồng bộ tên file logo
     logo_path = os.path.join(os.path.dirname(__file__), "assets", "company_logos.png")
 
     if not os.path.exists(logo_path):
@@ -95,13 +95,13 @@ def _add_footer(fig):
         footer_text,
         ha="center",
         va="center",
-        fontsize=15,
-        color="black"
+        fontsize=15,  # ✅ chữ to hơn
+        color="black" # ✅ màu đen
     )
 
 
 # =========================
-# 4️⃣ Vẽ biểu đồ 3D so sánh giá thuê đất (base64)
+# 4️⃣ Vẽ biểu đồ so sánh giá thuê đất (base64)
 # =========================
 def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     df = df.copy()
@@ -119,34 +119,14 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     names = df["Tên rút gọn"].tolist()
     prices = df["Giá số"].tolist()
 
-    fig = plt.figure(figsize=(20, 7))
-    ax = fig.add_subplot(111, projection="3d")
+    fig, ax = plt.subplots(figsize=(20, 7))
 
-    n = len(names)
-    xs = np.arange(n)
-    ys = np.zeros(n)
-    zs = np.zeros(n)
+    bars = ax.bar(range(len(names)), prices, width=0.6)
 
-    dx = np.full(n, 0.6)  # độ rộng theo X
-    dy = np.full(n, 0.6)  # độ dày theo Y
-    dz = np.array(prices, dtype=float)
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names, rotation=90, ha="center")
 
-    # Vẽ cột 3D
-    ax.bar3d(xs, ys, zs, dx, dy, dz, shade=True)
-
-    # Nhãn trục X
-    if n > 0:
-        ax.set_xticks(xs + dx[0] / 2)
-        ax.set_xticklabels(names, rotation=90, ha="center")
-    else:
-        ax.set_xticks([])
-
-    # Ẩn trục Y cho đỡ rối
-    ax.set_yticks([])
-    ax.set_ylabel("")
-
-    ax.set_zlabel("USD / m² / năm")
-
+    ax.set_ylabel("USD / m² / năm")
     ax.set_title(
         f"BIỂU ĐỒ SO SÁNH GIÁ THUÊ ĐẤT {industrial_type.upper()} TỈNH {province.upper()}",
         fontsize=16,
@@ -154,17 +134,26 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
         pad=15
     )
 
-    # Góc nhìn 3D (chỉnh theo ý bạn)
-    ax.view_init(elev=20, azim=-60)
+    # Trục Y bắt đầu từ 0
+    max_price = max(prices) if prices else 0
+    ax.set_ylim(0, max_price * 1.15 if max_price > 0 else 1)
 
-    # Trục Z bắt đầu từ 0
-    max_price = float(np.max(dz)) if n > 0 else 0
-    ax.set_zlim(0, max_price * 1.15 if max_price > 0 else 1)
+    # Hiển thị giá trên đầu cột
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f"{int(height)}",
+            ha="center",
+            va="bottom",
+            fontsize=9
+        )
 
-    # Chừa chỗ cho nhãn + footer
-    fig.subplots_adjust(bottom=0.50)
+    # ✅ Chừa chỗ cho label + footer
+    fig.subplots_adjust(bottom=0.45)
 
-    # Footer (giờ VN)
+    # ✅ Footer (giờ VN)
     _add_footer(fig)
 
     # Render ra PNG bytes
@@ -174,7 +163,7 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
 
     png_bytes = buffer.getvalue()
 
-    # Dán logo lên PNG
+    # ✅ Dán logo lên PNG
     png_bytes = _overlay_logo_on_png_bytes(
         png_bytes,
         alpha=0.9,
@@ -186,7 +175,7 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
 
 
 # =========================
-# 5️⃣ Vẽ biểu đồ 3D so sánh tổng diện tích (base64)
+# 5️⃣ Vẽ biểu đồ so sánh tổng diện tích (base64)
 # =========================
 def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     df = df.copy()
@@ -202,31 +191,19 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     names = df["Tên rút gọn"].tolist()
     areas = df["Tổng diện tích"].tolist()
 
-    fig = plt.figure(figsize=(20, 7))
-    ax = fig.add_subplot(111, projection="3d")
+    fig, ax = plt.subplots(figsize=(20, 7))
 
-    n = len(names)
-    xs = np.arange(n)
-    ys = np.zeros(n)
-    zs = np.zeros(n)
+    bars = ax.bar(
+        range(len(names)),
+        areas,
+        width=0.6,
+        color="green"
+    )
 
-    dx = np.full(n, 0.6)
-    dy = np.full(n, 0.6)
-    dz = np.array(areas, dtype=float)
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names, rotation=90, ha="center")
 
-    ax.bar3d(xs, ys, zs, dx, dy, dz, shade=True)
-
-    if n > 0:
-        ax.set_xticks(xs + dx[0] / 2)
-        ax.set_xticklabels(names, rotation=90, ha="center")
-    else:
-        ax.set_xticks([])
-
-    ax.set_yticks([])
-    ax.set_ylabel("")
-
-    ax.set_zlabel("Diện tích (ha)")
-
+    ax.set_ylabel("Diện tích (ha)")
     ax.set_title(
         f"BIỂU ĐỒ SO SÁNH TỔNG DIỆN TÍCH {industrial_type.upper()} TỈNH {province.upper()}",
         fontsize=16,
@@ -234,13 +211,24 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
         pad=15
     )
 
-    ax.view_init(elev=20, azim=-60)
+    max_area = max(areas) if areas else 0
+    ax.set_ylim(0, max_area * 1.15 if max_area > 0 else 1)
 
-    max_area = float(np.max(dz)) if n > 0 else 0
-    ax.set_zlim(0, max_area * 1.15 if max_area > 0 else 1)
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f"{int(height)}",
+            ha="center",
+            va="bottom",
+            fontsize=9
+        )
 
-    fig.subplots_adjust(bottom=0.50)
+    # ✅ chừa chỗ cho footer
+    fig.subplots_adjust(bottom=0.45)
 
+    # ✅ footer
     _add_footer(fig)
 
     buffer = io.BytesIO()
@@ -249,6 +237,7 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
 
     png_bytes = buffer.getvalue()
 
+    # ✅ logo
     png_bytes = _overlay_logo_on_png_bytes(
         png_bytes,
         alpha=0.9,
