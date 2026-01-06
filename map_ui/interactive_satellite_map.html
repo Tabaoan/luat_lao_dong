@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"/>
+  <title>Mapbox Satellite – IZ/CIZ Việt Nam</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet"/>
+  <link href="./vendor/mapbox-gl-geocoder.css" rel="stylesheet"/>
+  <link href="./vendor/mapbox-gl-draw.css" rel="stylesheet"/>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: 'Segoe UI', sans-serif; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    .top-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 320px;
+    }
+    .info-card {
+      background: rgba(0,0,0,0.65);
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    #coords { font-weight: 600; }
+    button.export-btn,
+    button.toggle-btn {
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      background: #0f62fe;
+      color: #fff;
+    }
+    button.toggle-btn {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.8);
+    }
+    .layer-pill {
+      background: rgba(15, 98, 254, 0.15);
+      color: #0f62fe;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      align-self: flex-start;
+    }
+        /* CHATBOX GÓC PHẢI */
+    .floating-chatbox {
+      position: absolute;
+      bottom: 15px;
+      right: 15px;
+      width: 330px;
+      height: 420px;
+      background: #ffffffee;
+      backdrop-filter: blur(6px);
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.25);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 9999;
+      transition: height 0.25s ease, transform 0.25s ease;
+    }
+
+    /* THU GỌN CHATBOX */
+    .floating-chatbox.collapsed {
+      height: 46px !important;
+    }
+    .floating-chatbox.collapsed .chatbox-messages,
+    .floating-chatbox.collapsed .chatbox-input {
+      display: none;
+    }
+
+    /* FULLSCREEN */
+    .floating-chatbox.fullscreen {
+      position: fixed;
+      inset: 0;
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      background: #ffffff;
+      z-index: 999999;
+    }
+
+    /* HEADER CHATBOX */
+    .chatbox-header {
+      padding: 8px 10px;
+      background: #0f62fe;
+      color: white;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chatbox-toggle-btn {
+      border: none;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      border-radius: 999px;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chatbox-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      font-size: 14px;
+    }
+
+    .msg-user {
+      text-align: right;
+      margin: 6px 0;
+    }
+    .msg-user span {
+      background: #0f62fe;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    .msg-bot {
+      text-align: left;
+      margin: 6px 0;
+    }
+    .msg-bot span {
+      background: #e7e7e7;
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    .chatbox-input {
+      display: flex;
+      gap: 6px;
+      padding: 8px;
+      border-top: 1px solid #ccc;
+    }
+
+    .chatbox-input input {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #aaa;
+    }
+
+    .chatbox-input button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      background: #0f62fe;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .msg-bot span, .msg-user span {
+        max-width: 260px;
+        word-wrap: break-word;
+        white-space: normal;
+        display: inline-block;
+      }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+    <!-- CHATBOX PHẢI DƯỚI — nằm riêng, KHÔNG được đặt trong .top-panel -->
+  <div class="floating-chatbox" id="chatbox">
+
+    <div class="chatbox-header">
+      <span>Chatbot IIP</span>
+
+      <div style="display:flex; gap:6px;">
+        <button id="cb-toggle" class="chatbox-toggle-btn">-</button>
+        <button id="cb-fullscreen" class="chatbox-toggle-btn" title="Fullscreen">⛶</button>
+      </div>
+    </div>
+
+    <div class="chatbox-messages" id="cb-messages"></div>
+
+    <div class="chatbox-input">
+      <input id="cb-input" type="text" placeholder="Nhập câu hỏi..." />
+      <button id="cb-send">Gửi</button>
+    </div>
+  </div>
+  <div class="top-panel">
+    <div id="geocoder"></div>
+    <div class="info-card">
+      Nhấn vào bản đồ để lấy tọa độ (tự động copy vào clipboard).<br>
+      <span id="coords">---</span>
+    </div>
+    <div class="layer-pill" id="layerStatus">Đang tải dữ liệu khu CN...</div>
+    <button class="toggle-btn" id="toggleProvinceBtn">Ẩn lớp tỉnh</button>
+    <button class="export-btn" id="exportBtn">Xuất GeoJSON (Mapbox Draw)</button>
+  </div>
+
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+  <script src="./vendor/mapbox-gl-geocoder.min.js"></script>
+  <script src="./vendor/mapbox-gl-draw.js"></script>
+  <script>
+    let ACTIVE_POPUPS = [];
+    const MAPBOX_TOKEN = 'pk.eyJ1IjoiZ2lhdXRlbmJhbnRvYW4iLCJhIjoiY21oa2NqYTFnMDM4djJrcHFiYWszbDYyZSJ9.5ZQzIvVgVYD_SdtKBvxRRg';
+    const DATA_URL = './industrial_zones.geojson'; // replace with your dataset
+    const PROVINCE_DATA_URL = './vn_provinces_34.geojson';
+    const PROVINCE_SOURCE_ID = 'vn-provinces';
+    const PROVINCE_LABEL_SOURCE_ID = 'vn-province-labels';
+    const MARITIME_SOURCE_ID = 'vn-maritime-claims';
+    const MARITIME_FEATURES = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {
+            name: 'Quần đảo Hoàng Sa (Của Việt Nam)',
+            short_name: 'Hoàng Sa',
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[
+              [111.0, 17.5],
+              [113.5, 17.5],
+              [113.5, 15.5],
+              [111.0, 15.5],
+              [111.0, 17.5],
+            ]],
+          },
+        },
+        {
+          type: 'Feature',
+          properties: {
+            name: 'Quần đảo Trường Sa (Của Việt Nam)',
+            short_name: 'Trường Sa',
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[
+              [112.5, 12.0],
+              [117.5, 12.0],
+              [117.5, 7.0],
+              [112.5, 7.0],
+              [112.5, 12.0],
+            ]],
+          },
+        },
+      ],
+    };
+
+    const REGION_COLORS = [
+      '#e74c3c', '#9b59b6', '#3498db', '#16a085', '#f39c12', '#d35400', '#1abc9c', '#2ecc71',
+      '#e67e22', '#f1c40f', '#8e44ad', '#2980b9', '#c0392b', '#27ae60', '#d68910', '#8e6ca7',
+      '#58bfc0', '#e17055', '#6c5ce7', '#fd79a8', '#00b894', '#fdcb6e', '#6c757d', '#0984e3',
+      '#b2bec3', '#fab1a0', '#e17055', '#74b9ff', '#ffeaa7', '#a29bfe', '#55efc4', '#e84393',
+      '#00cec9', '#ff7675',
+    ];
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/satellite-streets-v12',
+      center: [105.8342, 21.0278], // Hà Nội
+      zoom: 5.3,
+      pitch: 0,
+    });
+
+    map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
+
+    const geocoder = new MapboxGeocoder({
+      accessToken: MAPBOX_TOKEN,
+      placeholder: 'Tìm khu công nghiệp...',
+      countries: 'vn',
+      types: 'poi,place',
+      flyTo: false,
+      mapboxgl,
+    });
+    document.getElementById('geocoder').appendChild(geocoder.onAdd(map));
+    geocoder.on('result', (event) => {
+      if (handleGeocoderResult(event.result)) {
+        return;
+      }
+      const { bbox, center } = event.result || {};
+      if (bbox && bbox.length === 4) {
+        map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 50, duration: 1000 });
+      } else if (center && center.length === 2) {
+        map.flyTo({ center, zoom: Math.max(map.getZoom(), 8), speed: 0.8 });
+      }
+    });
+
+    const draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {
+        point: true,
+        polygon: true,
+        trash: true,
+      },
+    });
+    map.addControl(draw);
+
+    const coordsEl = document.getElementById('coords');
+    const layerStatusEl = document.getElementById('layerStatus');
+    const toggleProvinceBtn = document.getElementById('toggleProvinceBtn');
+    let provinceVisible = true;
+    let markerEventsBound = false;
+    let industrialGeojson = null;
+    let provinceGeojson = null;
+    let provinceLabelGeojson = null;
+
+    function copyToClipboard(text) {
+      navigator.clipboard?.writeText(text).catch(() => {
+        // fallback for insecure context
+      });
+    }
+
+    map.on('click', (e) => {
+      const hit = map.queryRenderedFeatures(e.point, { layers: ['industrial-zones-circles'] });
+      if (hit.length) {
+        return;
+      }
+      const { lng, lat } = e.lngLat.wrap();
+      const coordStr = `${lng.toFixed(6)}, ${lat.toFixed(6)}`;
+      coordsEl.textContent = coordStr;
+
+      new mapboxgl.Popup()
+        .setLngLat([lng, lat])
+        .setHTML(`<strong>Tọa độ:</strong><br>${coordStr}`)
+        .addTo(map);
+
+      copyToClipboard(coordStr);
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const data = draw.getAll();
+      if (!data.features.length) {
+        alert('Chưa có đối tượng nào được vẽ.');
+        return;
+      }
+      const geojson = JSON.stringify(data, null, 2);
+      const blob = new Blob([geojson], { type: 'application/vnd.geo+json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'industrial_zones.geojson';
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    map.on('load', () => {
+      layerStatusEl.textContent = 'Đã tải bản đồ, đang lấy dữ liệu...';
+      loadProvinceBoundaries();
+      addMaritimeClaims();
+      loadIndustrialZones();
+    });
+
+    toggleProvinceBtn.addEventListener('click', () => {
+      provinceVisible = !provinceVisible;
+      toggleProvinceBtn.textContent = provinceVisible ? 'Ẩn lớp tỉnh' : 'Hiện lớp tỉnh';
+      toggleProvinceLayer(provinceVisible);
+    });
+
+    async function loadIndustrialZones() {
+      console.log('loadIndustrialZones() start →', DATA_URL);
+      try {
+        const response = await fetch(DATA_URL, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const geojson = await response.json();
+        if (!geojson.features?.length) {
+          layerStatusEl.textContent = 'Không có dữ liệu khu CN.';
+          return;
+        }
+        addIndustrialLayer(geojson);
+        layerStatusEl.textContent = `Đang hiển thị ${geojson.features.length} khu CN/Cụm CN`;
+        zoomToData(geojson);
+      } catch (error) {
+        console.error('Load GeoJSON failed', error);
+        layerStatusEl.textContent = 'Không tải được industrial_zones.geojson';
+      }
+    }
+
+    async function loadProvinceBoundaries() {
+      try {
+        const response = await fetch(PROVINCE_DATA_URL, { cache: 'default' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const geojson = await response.json();
+        geojson.features = geojson.features?.map((feature, idx) => {
+          const props = feature.properties || {};
+          const color = REGION_COLORS[idx % REGION_COLORS.length];
+          feature.properties = {
+            ...props,
+            color,
+            display_name: props.name || props.NAME_1 || 'Không rõ',
+            members: props.members || [],
+          };
+          return feature;
+        }) || [];
+        const labelFeatures = geojson.features.map((feature) => ({
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: computeCentroid(feature.geometry),
+          },
+          properties: {
+            display_name: feature.properties.display_name,
+            color: feature.properties.color,
+          },
+        }));
+        provinceGeojson = geojson;
+        provinceLabelGeojson = { type: 'FeatureCollection', features: labelFeatures };
+        addProvinceLayer(geojson);
+      } catch (error) {
+        console.error('Load provinces failed', error);
+      }
+    }
+
+    function addIndustrialLayer(data) {
+      industrialGeojson = data;
+      const sourceId = 'industrial-zones';
+      if (map.getSource(sourceId)) {
+        map.getSource(sourceId).setData(data);
+      } else {
+        map.addSource(sourceId, { type: 'geojson', data });
+        map.addLayer({
+          id: 'industrial-zones-circles',
+          type: 'circle',
+          source: sourceId,
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 4, 12, 10],
+            'circle-color': '#ff9f1c',
+            'circle-stroke-color': '#fff',
+            'circle-stroke-width': 1,
+          },
+        });
+        bindIndustrialMarkerEvents();
+      }
+    }
+
+    function zoomToData(geojson) {
+      const bounds = new mapboxgl.LngLatBounds();
+      geojson.features.forEach((feature) => {
+        if (feature.geometry?.type === 'Point') {
+          bounds.extend(feature.geometry.coordinates);
+        } else if (feature.geometry?.type === 'Polygon') {
+          feature.geometry.coordinates[0].forEach((coord) => bounds.extend(coord));
+        }
+      });
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, { padding: 60, duration: 1200 });
+      }
+    }
+
+    function addProvinceLayer(geojson) {
+      if (!map.getSource(PROVINCE_SOURCE_ID)) {
+        map.addSource(PROVINCE_SOURCE_ID, { type: 'geojson', data: geojson });
+        if (provinceLabelGeojson) {
+          map.addSource(PROVINCE_LABEL_SOURCE_ID, { type: 'geojson', data: provinceLabelGeojson });
+        }
+        map.addLayer({
+          id: 'vn-provinces-fill',
+          type: 'fill',
+          source: PROVINCE_SOURCE_ID,
+          paint: {
+            'fill-color': ['coalesce', ['get', 'color'], '#9b59b6'],
+            'fill-opacity': 0.6,
+          },
+        });
+        map.addLayer({
+          id: 'vn-provinces-outline',
+          type: 'line',
+          source: PROVINCE_SOURCE_ID,
+          paint: {
+            'line-color': '#242a61',
+            'line-width': 1.8,
+            'line-opacity': 0.9,
+          },
+        });
+        // LAYER TÔ ĐẬM TỈNH ĐƯỢC CHỌN
+        map.addLayer({
+          id: 'vn-province-highlight',
+          type: 'line',
+          source: PROVINCE_SOURCE_ID,
+          paint: {
+            'line-color': '#ffcc00',
+            'line-width': 4,
+            'line-opacity': 0
+          },
+          filter: ["==", "name", ""]
+        });
+        if (provinceLabelGeojson) {
+          map.addLayer({
+            id: 'vn-provinces-label',
+            type: 'symbol',
+            source: PROVINCE_LABEL_SOURCE_ID,
+            layout: {
+              'text-field': ['get', 'display_name'],
+              'text-font': ['Segoe UI Bold', 'Open Sans Semibold', 'Arial Unicode MS Regular'],
+              'text-size': ['interpolate', ['linear'], ['zoom'], 5, 11, 8, 12, 10, 14, 12, 16, 14, 20],
+              'text-allow-overlap': false,
+              'text-optional': true,
+              'text-padding': 2,
+              'symbol-placement': 'point',
+            },
+            paint: {
+              'text-color': '#ffffff',
+              'text-halo-color': '#000000',
+              'text-halo-width': 1.2,
+              'text-halo-blur': 0.2,
+            },
+          });
+        }
+      } else {
+        map.getSource(PROVINCE_SOURCE_ID).setData(geojson);
+        if (provinceLabelGeojson && map.getSource(PROVINCE_LABEL_SOURCE_ID)) {
+          map.getSource(PROVINCE_LABEL_SOURCE_ID).setData(provinceLabelGeojson);
+        }
+      }
+      toggleProvinceLayer(provinceVisible);
+    }
+
+    function toggleProvinceLayer(show) {
+      if (!map.getLayer('vn-provinces-fill')) return;
+      const visibility = show ? 'visible' : 'none';
+      map.setLayoutProperty('vn-provinces-fill', 'visibility', visibility);
+      map.setLayoutProperty('vn-provinces-outline', 'visibility', visibility);
+      if (map.getLayer('vn-provinces-label')) {
+        map.setLayoutProperty('vn-provinces-label', 'visibility', visibility);
+      }
+    }
+
+    function bindIndustrialMarkerEvents() {
+      if (markerEventsBound || !map.getLayer('industrial-zones-circles')) return;
+      markerEventsBound = true;
+      map.on('click', 'industrial-zones-circles', (e) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const coords = feature.geometry?.coordinates?.slice() || e.lngLat.toArray();
+        const props = feature.properties || {};
+        const googleUrl = coords?.length === 2
+          ? `https://www.google.com/maps/search/?api=1&query=${coords[1]},${coords[0]}`
+          : '';
+        const popupHtml = `
+          <strong>${props.name || 'Không xác định'}</strong><br>
+          ${props.kind ? `<em>${props.kind}</em><br>` : ''}
+          ${props.address ? `${props.address}<br>` : ''}
+          ${props.url ? `<a href="${props.url}" target="_blank" rel="noopener">Xem chi tiết</a><br>` : ''}
+          ${googleUrl ? `<a href="${googleUrl}" target="_blank" rel="noopener">Mở Google Maps</a>` : ''}
+        `;
+        new mapboxgl.Popup({ closeButton: true })
+          .setLngLat(coords)
+          .setHTML(popupHtml)
+          .addTo(map);
+      });
+      map.on('mouseenter', 'industrial-zones-circles', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'industrial-zones-circles', () => {
+        map.getCanvas().style.cursor = '';
+      });
+    }
+
+    function addMaritimeClaims() {
+      if (map.getSource(MARITIME_SOURCE_ID)) {
+        map.getSource(MARITIME_SOURCE_ID).setData(MARITIME_FEATURES);
+        return;
+      }
+      map.addSource(MARITIME_SOURCE_ID, { type: 'geojson', data: MARITIME_FEATURES });
+      map.addLayer({
+        id: 'vn-maritime-fill',
+        type: 'fill',
+        source: MARITIME_SOURCE_ID,
+        paint: {
+          'fill-color': '#40c4ff',
+          'fill-opacity': 0.12,
+        },
+      });
+      map.addLayer({
+        id: 'vn-maritime-outline',
+        type: 'line',
+        source: MARITIME_SOURCE_ID,
+        paint: {
+          'line-color': '#40c4ff',
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      });
+      map.addLayer({
+        id: 'vn-maritime-label',
+        type: 'symbol',
+        source: MARITIME_SOURCE_ID,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Segoe UI Bold', 'Open Sans Bold', 'Arial Unicode MS Regular'],
+          'text-size': 14,
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#0f62fe',
+          'text-halo-width': 1.2,
+        },
+      });
+    }
+
+    function handleGeocoderResult(result) {
+      const provinceName = pickProvinceName(result);
+      if (provinceName && flyToProvince(provinceName)) {
+        return true;
+      }
+      return false;
+    }
+
+    function pickProvinceName(result) {
+      if (!result) return '';
+      const normalizedType = (result.place_type || []).map((type) => type.toLowerCase());
+      // Prioritize the label the user clicked
+      if (result.text) return result.text;
+      // Then try the hierarchy
+      const ctx = result.context || [];
+      const regionMatch = ctx.find((item) => item.id?.startsWith('region.'));
+      if (regionMatch?.text) return regionMatch.text;
+      const placeMatch = ctx.find((item) => item.id?.startsWith('place.'));
+      if (placeMatch?.text) return placeMatch.text;
+      // Finally, accept district if returned
+      const districtMatch = ctx.find((item) => item.id?.startsWith('district.'));
+      return districtMatch?.text || '';
+    }
+
+    function flyToProvince(provinceName) {
+      const normalized = normalizeName(provinceName);
+      if (!normalized) return false;
+
+      const provinceFeature = findProvinceFeature(normalized);
+      if (provinceFeature) {
+        const bounds = new mapboxgl.LngLatBounds();
+        extendBounds(bounds, provinceFeature.geometry);
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds, { padding: 60, duration: 1200 });
+          layerStatusEl.textContent =
+            `Đang hiển thị ranh giới ${provinceFeature.properties?.display_name || provinceName}`;
+          return true;
+        }
+      }
+
+      if (!industrialGeojson?.features?.length) return false;
+
+      const matches = industrialGeojson.features.filter((feature) => {
+        const province = normalizeName(feature.properties?.province);
+        return province && (province.includes(normalized) || normalized.includes(province));
+      });
+
+      if (!matches.length) return false;
+
+      const bounds = new mapboxgl.LngLatBounds();
+      matches.forEach((feature) => extendBounds(bounds, feature.geometry));
+      if (bounds.isEmpty()) return false;
+
+      map.fitBounds(bounds, { padding: 80, duration: 1200 });
+      layerStatusEl.textContent =
+        `Đang hiển thị ${matches.length} IZ/CCN thuộc ${provinceName}`;
+      return true;
+    }
+
+
+        function extendBounds(bounds, geometry) {
+          if (!geometry) return;
+          if (geometry.type === 'Point') {
+            bounds.extend(geometry.coordinates);
+            return;
+          }
+          if (geometry.type === 'Polygon') {
+            geometry.coordinates?.forEach((ring) => ring.forEach((coord) => bounds.extend(coord)));
+            return;
+          }
+          if (geometry.type === 'MultiPolygon') {
+            geometry.coordinates?.forEach((polygon) => {
+              polygon.forEach((ring) => ring.forEach((coord) => bounds.extend(coord)));
+            });
+          }
+        }
+
+    function normalizeText(text) {
+      return (text || '')
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+    }
+
+    function computeCentroid(geometry) {
+      if (!geometry) return [0, 0];
+      if (geometry.type === 'Polygon') {
+        return polylabelPoint(geometry.coordinates);
+      }
+      if (geometry.type === 'MultiPolygon') {
+        let best = { area: 0, point: [0, 0] };
+        geometry.coordinates?.forEach((poly) => {
+          const area = Math.abs(polygonSignedArea(poly[0]));
+          const p = polylabelPoint(poly);
+          if (area > best.area) {
+            best = { area, point: p };
+          }
+        });
+        return best.point;
+      }
+      return [0, 0];
+    }
+
+    function polylabelPoint(polygon, precision = 0.1) {
+      // Minimal polylabel implementation for a single polygon (array of rings)
+      let minX, minY, maxX, maxY;
+      polygon[0].forEach(([x, y]) => {
+        if (minX === undefined || x < minX) minX = x;
+        if (minY === undefined || y < minY) minY = y;
+        if (maxX === undefined || x > maxX) maxX = x;
+        if (maxY === undefined || y > maxY) maxY = y;
+      });
+      const width = maxX - minX;
+      const height = maxY - minY;
+      const cellSize = Math.min(width, height);
+      if (!cellSize) return [minX, minY];
+      let h = cellSize / 2;
+
+      const cellQueue = [];
+      for (let x = minX; x < maxX; x += cellSize) {
+        for (let y = minY; y < maxY; y += cellSize) {
+          cellQueue.push(makeCell(x + h, y + h, h, polygon));
+        }
+      }
+
+      let bestCell = makeCell(minX + width / 2, minY + height / 2, 0, polygon);
+      const bboxCell = makeCell(minX, minY, 0, polygon);
+      if (bboxCell.d > bestCell.d) bestCell = bboxCell;
+
+      while (cellQueue.length) {
+        cellQueue.sort((a, b) => b.max - a.max);
+        const cell = cellQueue.shift();
+        if (cell.d > bestCell.d) bestCell = cell;
+        if (cell.max - bestCell.d <= precision) continue;
+        h = cell.h / 2;
+        cellQueue.push(makeCell(cell.x - h, cell.y - h, h, polygon));
+        cellQueue.push(makeCell(cell.x + h, cell.y - h, h, polygon));
+        cellQueue.push(makeCell(cell.x - h, cell.y + h, h, polygon));
+        cellQueue.push(makeCell(cell.x + h, cell.y + h, h, polygon));
+      }
+      return [bestCell.x, bestCell.y];
+    }
+
+    function makeCell(x, y, h, polygon) {
+      const d = pointToPolygonDist([x, y], polygon);
+      return { x, y, h, d, max: d + h * Math.SQRT2 };
+    }
+
+    function pointToPolygonDist(point, polygon) {
+      let inside = false;
+      let minDistSq = Infinity;
+      const [px, py] = point;
+      polygon.forEach((ring) => {
+        for (let i = 0, len = ring.length - 1; i < len; i++) {
+          const [x1, y1] = ring[i];
+          const [x2, y2] = ring[i + 1];
+          if (((y1 > py) !== (y2 > py)) && (px < ((x2 - x1) * (py - y1)) / (y2 - y1) + x1)) {
+            inside = !inside;
+          }
+          const distSq = segmentDistSq(px, py, x1, y1, x2, y2);
+          if (distSq < minDistSq) minDistSq = distSq;
+        }
+      });
+      return (inside ? 1 : -1) * Math.sqrt(minDistSq);
+    }
+
+    function segmentDistSq(px, py, x1, y1, x2, y2) {
+      let dx = x2 - x1;
+      let dy = y2 - y1;
+      if (dx !== 0 || dy !== 0) {
+        const t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+        if (t > 1) {
+          dx = px - x2;
+          dy = py - y2;
+        } else if (t > 0) {
+          dx = px - (x1 + dx * t);
+          dy = py - (y1 + dy * t);
+        } else {
+          dx = px - x1;
+          dy = py - y1;
+        }
+      }
+      return dx * dx + dy * dy;
+    }
+
+    function polygonSignedArea(ring) {
+      if (!ring?.length) return 0;
+      let sum = 0;
+      for (let i = 0, len = ring.length - 1; i < len; i++) {
+        const [x0, y0] = ring[i];
+        const [x1, y1] = ring[i + 1];
+        sum += x0 * y1 - x1 * y0;
+      }
+      return sum / 2;
+    }
+
+    function findProvinceFeature(normalizedName) {
+      if (!provinceGeojson || !provinceGeojson.features) return null;
+
+      return provinceGeojson.features.find(fe => {
+        const props = fe.properties || {};
+        const name1 = normalizeName(props.name || "");
+        return (
+          name1 === normalizedName ||
+          name1.includes(normalizedName) ||
+          normalizedName.includes(name1)
+        );
+      }) || null;
+    }
+
+    // Cấu hình API
+const CHATBOT_API  = 'http://localhost:5000/chatbot';
+const MAP_INTENT_API = 'http://localhost:5000/map_intent';
+const MAP_INTENT_POLL = 'http://localhost:5000/map_intent_poll';
+/****************************************************************
+ * ZOOM TỈNH THEO TÊN (DÙNG vn_provinces.geojson)
+ ****************************************************************/
+function normalizeName(str) {
+  return String(str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function zoomProvinceByName(name) {
+  if (!provinceGeojson) {
+    console.warn("Province data not loaded yet");
+    return;
+  }
+
+  const target = normalizeName(name);
+
+  // TÌM TỈNH TRONG GEOJSON
+  const feature = provinceGeojson.features.find(f => {
+    const n = normalizeName(f.properties?.name || "");
+    return n === target;
+  });
+
+  if (!feature) {
+    console.warn("Không tìm thấy tỉnh:", name);
+    return;
+  }
+
+  console.log("🎯 Highlight province:", feature.properties.name);
+
+  // -------------------------------------
+  // 1️⃣ TÔ ĐẬM RANH GIỚI TỈNH
+  // -------------------------------------
+  map.setFilter("vn-province-highlight", [
+    "==",
+    "name",
+    feature.properties.name
+  ]);
+
+  map.setPaintProperty("vn-province-highlight", "line-opacity", 1);
+
+  // -------------------------------------
+  // 2️⃣ ZOOM VÀO TỈNH
+  // -------------------------------------
+  const bounds = new mapboxgl.LngLatBounds();
+  const geom = feature.geometry;
+
+  if (geom.type === "Polygon") {
+    geom.coordinates[0].forEach(c => bounds.extend(c));
+  } else if (geom.type === "MultiPolygon") {
+    geom.coordinates.forEach(poly =>
+      poly[0].forEach(c => bounds.extend(c))
+    );
+  }
+
+  map.fitBounds(bounds, { padding: 60, duration: 1200 });
+}
+
+const cbMessages = document.getElementById("cb-messages");
+const cbInput = document.getElementById("cb-input");
+const cbSend = document.getElementById("cb-send");
+const cbToggle = document.getElementById("cb-toggle");
+const chatboxEl = document.getElementById("chatbox");
+const cbFullscreen = document.getElementById("cb-fullscreen");
+
+// Toggle fullscreen
+cbFullscreen.onclick = () => {
+  chatboxEl.classList.toggle("fullscreen");
+
+  // đổi icon
+  cbFullscreen.textContent =
+    chatboxEl.classList.contains("fullscreen") ? "🗗" : "⛶";
+
+  // nếu đang fullscreen thì không được collapsed
+  if (chatboxEl.classList.contains("fullscreen")) {
+    chatboxEl.classList.remove("collapsed");
+    cbToggle.textContent = "−";
+  }
+};
+function addUserMessage(msg) {
+  cbMessages.innerHTML += `<div class="msg-user"><span>${escapeHtml(msg)}</span></div>`;
+  cbMessages.scrollTop = cbMessages.scrollHeight;
+}
+
+function addBotMessageText(msg) {
+  cbMessages.innerHTML += `<div class="msg-bot"><span>${escapeHtml(msg)}</span></div>`;
+  cbMessages.scrollTop = cbMessages.scrollHeight;
+}
+
+function addBotMessageHtml(html) {
+  cbMessages.innerHTML += `<div class="msg-bot"><span>${html}</span></div>`;
+  cbMessages.scrollTop = cbMessages.scrollHeight;
+}
+
+cbSend.onclick = sendChatboxMessage;
+cbInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") sendChatboxMessage();
+});
+
+cbToggle.onclick = () => {
+  chatboxEl.classList.toggle("collapsed");
+  cbToggle.textContent = chatboxEl.classList.contains("collapsed") ? "+" : "−";
+};
+/****************************************************************
+ * PARSE PROVINCE JSON (tránh lỗi undefined)
+ ****************************************************************/
+function tryParseProvinceJson(answer) {
+  if (!answer) return null;
+
+  // Nếu backend trả string
+  if (typeof answer === "string") {
+    const s = answer.trim();
+    if (!s.startsWith("{")) return null;
+    try {
+      const obj = JSON.parse(s);
+      if (obj.province && Array.isArray(obj.data)) return obj;
+    } catch {
+      return null;
+    }
+  }
+
+  // Nếu backend trả object
+  if (typeof answer === "object" && answer.province && Array.isArray(answer.data)) {
+    return answer;
+  }
+
+  return null;
+}
+
+/****************************************************************
+ * RENDER TABLE CHO PROVINCE RESPONSE (tùy chọn)
+ ****************************************************************/
+function renderProvinceTable(obj) {
+  const province = obj.province || "";
+  const zones = obj.data || [];
+  const count = obj.count || zones.length;
+
+  let rows = zones.map((z, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(z["Tên"] || "")}</td>
+      <td>${escapeHtml(z["Loại"] || "")}</td>
+      <td>${escapeHtml(z["Địa chỉ"] || "")}</td>
+      <td>${escapeHtml(z["Thời gian vận hành"] || "")}</td>
+      <td>${escapeHtml(z["Tổng diện tích"] || "")}</td>
+      <td>${escapeHtml(z["Giá thuê đất"] || "")}</td>
+      <td>${escapeHtml((z["Ngành nghề"] || "").replace(/\n/g, "<br>"))}</td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="response-title">
+      ${obj.message || `Danh sách KCN/CCN tại ${province}`}
+    </div>
+
+    <div><strong>${count}</strong> khu công nghiệp / cụm công nghiệp trong tỉnh ${escapeHtml(province)}</div>
+
+    <table class="zone-table" style="margin-top:10px;">
+      <thead>
+        <tr>
+          <th>STT</th>
+          <th>Tên</th>
+          <th>Loại</th>
+          <th>Địa chỉ</th>
+          <th>Thời gian</th>
+          <th>Diện tích</th>
+          <th>Giá thuê</th>
+          <th>Ngành nghề</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+}
+
+/****************************************************************
+ * HÀM HIỂN THỊ TẤT CẢ KCN/CCN TRONG TỈNH
+ ****************************************************************/
+function showProvinceIndustrialZones(list) {
+  if (!Array.isArray(list)) return;
+
+  // XÓA TOÀN BỘ POPUP CŨ
+  ACTIVE_POPUPS.forEach(p => p.remove());
+  ACTIVE_POPUPS = [];
+
+  // TẠO POPUP MỚI
+  list.forEach(item => {
+    const [lng, lat] = item.coordinates;
+
+    const popup = new mapboxgl.Popup({ closeOnClick: false })
+      .setLngLat([lng, lat])
+      .setHTML(`
+        <strong>${item.name}</strong><br>
+        <em>${item.kind}</em><br>
+        ${item.address}
+      `)
+      .addTo(map);
+
+    ACTIVE_POPUPS.push(popup);
+  });
+}
+
+async function sendChatboxMessage() {
+  const q = cbInput.value.trim();
+  if (!q) return;
+
+  addUserMessage(q);
+  cbInput.value = "";
+  addBotMessageText("Đang xử lý...");
+
+  try {
+    const res = await fetch(CHATBOT_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q })
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server trả về lỗi: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const intent = data.map_intent || null;
+
+    // Xóa dòng "Đang xử lý..."
+    const msgs = cbMessages.querySelectorAll(".msg-bot");
+    if (msgs.length > 0) msgs[msgs.length - 1].remove();
+
+    // =======================
+    // 1️⃣ HIỂN THỊ NỘI DUNG TRẢ LỜI
+    // =======================
+    const answer = data.answer;
+    const parsed = tryParseProvinceJson(answer);
+
+    if (parsed) {
+      addBotMessageHtml(renderProvinceTable(parsed));
+    } else {
+      addBotMessageText(
+        typeof answer === "string" ? answer : JSON.stringify(answer)
+      );
+    }
+
+    // =======================
+    // 2️⃣ ZOOM MAP NGAY LẬP TỨC TỪ map_intent
+    // =======================
+    if (intent) {
+
+      // =========================
+      // 🟦 ZOOM TỚI KHU / CỤM CN
+      // =========================
+      if (intent.type === "zone" && Array.isArray(intent.coordinates)) {
+
+        ACTIVE_POPUPS.forEach(p => p.remove());
+        ACTIVE_POPUPS = [];
+
+        const [lng, lat] = intent.coordinates;
+        console.log("🎯 ZOOM ZONE:", intent.zone_name, lng, lat);
+
+        map.flyTo({
+          center: [lng, lat],
+          zoom: 15.5,
+          speed: 1
+        });
+      }
+
+      // =========================
+      // 🟩 ZOOM TỈNH + SHOW LIST
+      // =========================
+      else if (intent.type === "province" && intent.province) {
+
+        ACTIVE_POPUPS.forEach(p => p.remove());
+        ACTIVE_POPUPS = [];
+
+        console.log("🎯 ZOOM PROVINCE:", intent.province);
+
+        zoomProvinceByName(intent.province);
+
+        if (intent.iz_list) {
+          setTimeout(() => {
+            showProvinceIndustrialZones(intent.iz_list);
+          }, 1200);
+        }
+      }
+    }
+
+  } catch (err) {
+    // Xoá dòng đang xử lý
+    const msgs = cbMessages.querySelectorAll(".msg-bot");
+    if (msgs.length > 0) msgs[msgs.length - 1].remove();
+
+    addBotMessageText(
+      `⚠️ Lỗi: ${err.message}. Kiểm tra server có đang chạy tại ${CHATBOT_API}?`
+    );
+    console.error("Chatbox error:", err);
+  }
+}
+
+/****************************************************************
+ * POLL MAP_INTENT
+ ****************************************************************/
+async function pollIntent() {
+  try {
+    const resp = await fetch(MAP_INTENT_POLL);
+    const intent = await resp.json();
+
+    console.log("📡 POLL INTENT:", intent);
+
+    // Không có intent mới → thoát
+    if (!intent || intent.status === "empty") return;
+
+    // =============================
+    // 🔥 1) ƯU TIÊN ZOOM KHU / CỤM CN
+    // =============================
+    if (intent.type === "zone" && Array.isArray(intent.coordinates)) {
+      const [lng, lat] = intent.coordinates;
+
+      console.log("🎯 [INTENT] ZOOM ZONE →", intent.zone_name, lng, lat);
+
+      // XÓA POPUP TỈNH CŨ (nếu có)
+      if (window.ACTIVE_POPUPS) {
+        window.ACTIVE_POPUPS.forEach(p => p.remove());
+        window.ACTIVE_POPUPS = [];
+      }
+
+      // Zoom đến vị trí KCN / CCN
+      map.flyTo({
+        center: [lng, lat],
+        zoom: 15.5,
+        speed: 0.9,
+        essential: true
+      });
+
+      return; // Zone override province
+    }
+
+    // =============================
+    // 📍 2) ZOOM TỈNH (PROVINCE)
+    // =============================
+    if (intent.type === "province" && intent.province) {
+      console.log("🎯 [INTENT] ZOOM PROVINCE →", intent.province);
+
+      zoomProvinceByName(intent.province);
+
+      return;
+    }
+
+    // =============================
+    // ❓ 3) TYPES KHÁC (Dự phòng)
+    // =============================
+    console.warn("⚠️ Intent type chưa hỗ trợ:", intent);
+
+  } catch (err) {
+    console.warn("❌ Polling Error:", err);
+  }
+}
+
+/****************************************************************
+ * ESCAPE HTML
+ ****************************************************************/
+function escapeHtml(str) {
+  return String(str == null ? "" : str).replace(/[&<>"']/g, s => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[s]));
+}
+  </script>
+</body>
+</html>

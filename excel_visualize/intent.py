@@ -43,19 +43,19 @@ def detect_excel_metric(message: str) -> str | None:
     """
     msg = message.lower()
 
-    # 👉 Giá thuê đất
+    #  Giá thuê đất
     price_keywords = [
-        "giá",
-        "giá thuê",
         "giá thuê đất",
-        "giá đất"
+        "giá đất",
+        "giá thuê",
+        "giá",
     ]
 
-    # 👉 Tổng diện tích
+    # Tổng diện tích
     area_keywords = [
-        "diện tích",
         "tổng diện tích",
-        "quy mô"
+        "diện tích",
+        "quy mô",
     ]
 
     if any(k in msg for k in price_keywords):
@@ -76,23 +76,17 @@ def detect_industrial_type(message: str) -> str | None:
     """
     msg = message.lower()
 
-    if (
-        "khu công nghiệp" in msg
-        or "kcn" in msg
-    ):
+    if ("khu công nghiệp" in msg) or ("kcn" in msg):
         return "Khu công nghiệp"
 
-    if (
-        "cụm công nghiệp" in msg
-        or "ccn" in msg
-    ):
+    if ("cụm công nghiệp" in msg) or ("ccn" in msg):
         return "Cụm công nghiệp"
 
     return None
 
 
 # ============================================================
-# 4️⃣ NEW: Parse điều kiện lọc (từ...đến..., lớn hơn, nhỏ hơn...)
+# 4️⃣ Parse điều kiện lọc (từ...đến..., trong khoảng...đến..., lớn hơn, nhỏ hơn...)
 # ============================================================
 
 def _to_number(raw: str) -> Optional[float]:
@@ -132,16 +126,27 @@ def parse_excel_numeric_filter(message: str) -> Optional[Dict[str, Any]]:
     """
     msg = message.lower()
 
-    # 1) "từ A đến B"
-    m = re.search(r"từ\s*([0-9\.,]+(?:\s*\w+)?)\s*đến\s*([0-9\.,]+(?:\s*\w+)?)", msg)
+    # 1) BETWEEN:
+    # - "từ A đến B"
+    # - "trong khoảng A đến B"
+    # - "khoảng A đến B"
+    # - "A đến B"
+    # - "A - B"
+    m = re.search(
+        r"(?:từ|trong\s*khoảng|khoảng)?\s*"
+        r"([0-9\.,]+(?:\s*\w+)?)\s*"
+        r"(?:đến)\s*"
+        r"([0-9\.,]+(?:\s*\w+)?)",
+        msg
+    )
     if m:
         a = _to_number(m.group(1))
         b = _to_number(m.group(2))
         if a is not None and b is not None:
             return {"type": "between", "min": min(a, b), "max": max(a, b)}
 
-    # 2) "A - B" (có thể có khoảng trắng)
-    m = re.search(r"([0-9\.,]+)\s*-\s*([0-9\.,]+)", msg)
+    # 2) BETWEEN dạng "A - B"
+    m = re.search(r"([0-9\.,]+(?:\s*\w+)?)\s*-\s*([0-9\.,]+(?:\s*\w+)?)", msg)
     if m:
         a = _to_number(m.group(1))
         b = _to_number(m.group(2))
@@ -164,25 +169,37 @@ def parse_excel_numeric_filter(message: str) -> Optional[Dict[str, Any]]:
         if op == "<":
             return {"type": "lt", "value": val}
 
-    # 4) Dạng tiếng Việt: lớn hơn / trên / nhiều hơn
+    # 4) Dạng tiếng Việt: lớn hơn / trên / nhiều hơn / cao hơn (và biến thể "từ ... trở lên")
     m = re.search(r"(lớn hơn|trên|nhiều hơn|cao hơn)\s*([0-9\.,]+(?:\s*\w+)?)", msg)
     if m:
         val = _to_number(m.group(2))
         if val is not None:
             return {"type": "gt", "value": val}
 
-    # 5) Dạng tiếng Việt: nhỏ hơn / dưới / ít hơn / thấp hơn
+    m = re.search(r"(từ)\s*([0-9\.,]+(?:\s*\w+)?)\s*(trở lên|đổ lên|trở lên)\b", msg)
+    if m:
+        val = _to_number(m.group(2))
+        if val is not None:
+            return {"type": "gte", "value": val}
+
+    # 5) Dạng tiếng Việt: nhỏ hơn / dưới / ít hơn / thấp hơn (và biến thể "đến ... trở xuống")
     m = re.search(r"(nhỏ hơn|dưới|ít hơn|thấp hơn)\s*([0-9\.,]+(?:\s*\w+)?)", msg)
     if m:
         val = _to_number(m.group(2))
         if val is not None:
             return {"type": "lt", "value": val}
 
+    m = re.search(r"(đến)\s*([0-9\.,]+(?:\s*\w+)?)\s*(trở xuống|đổ xuống|trở xuống)\b", msg)
+    if m:
+        val = _to_number(m.group(2))
+        if val is not None:
+            return {"type": "lte", "value": val}
+
     return None
 
 
 # ============================================================
-# 5️⃣ NEW: API gộp để handler dùng (metric + filter)
+# 5️⃣ API gộp để handler dùng (metric + filter)
 # ============================================================
 def extract_excel_visualize_constraints(message: str) -> Dict[str, Any]:
     """
