@@ -38,7 +38,7 @@ def _overlay_logo_on_png_bytes(
     - scale: logo chiếm bao nhiêu % chiều rộng ảnh (vd 0.08 = 8%)
     - padding: khoảng cách tới mép (px)
     """
-    # ✅ Đồng bộ tên file logo
+    #  Đồng bộ tên file logo
     logo_path = os.path.join(os.path.dirname(__file__), "assets", "company_logos.png")
 
     if not os.path.exists(logo_path):
@@ -74,6 +74,51 @@ def _overlay_logo_on_png_bytes(
     base_img.convert("RGB").save(out, format="PNG")
     return out.getvalue()
 
+def _overlay_qr_on_png_bytes(
+    png_bytes: bytes,
+    alpha: float = 1.0,
+    scale: float = 0.12,
+    padding: int = 20
+) -> bytes:
+    """
+    Dán QR code vào góc phải dưới của ảnh PNG.
+
+    - alpha: độ trong suốt QR (0-1)
+    - scale: QR chiếm bao nhiêu % chiều rộng ảnh (vd 0.12 = 12%)
+    - padding: khoảng cách tới mép (px)
+    """
+    qr_path = os.path.join(os.path.dirname(__file__), "assets", "qr_code.png")
+
+    if not os.path.exists(qr_path):
+        return png_bytes
+
+    try:
+        base_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        qr = Image.open(qr_path).convert("RGBA")
+    except Exception:
+        return png_bytes
+
+    # Resize QR theo chiều rộng ảnh
+    new_w = max(1, int(base_img.size[0] * scale))
+    ratio = new_w / qr.size[0]
+    new_h = max(1, int(qr.size[1] * ratio))
+    qr = qr.resize((new_w, new_h), Image.LANCZOS)
+
+    # Apply alpha nếu cần
+    if alpha < 1.0:
+        r, g, b, a = qr.split()
+        a = a.point(lambda p: int(p * alpha))
+        qr = Image.merge("RGBA", (r, g, b, a))
+
+    # 👉 Vị trí góc phải dưới
+    x = base_img.size[0] - new_w - padding
+    y = base_img.size[1] - new_h - padding
+
+    base_img.paste(qr, (x, y), qr)
+
+    out = io.BytesIO()
+    base_img.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
 
 # =========================
 # 3️⃣ Footer (giờ Việt Nam)
@@ -171,6 +216,14 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
         padding=20
     )
 
+    # ✅ Dán QR (góc phải dưới)
+    png_bytes = _overlay_qr_on_png_bytes(
+        png_bytes,
+        alpha=1.0,
+        scale=0.08,
+        padding=20
+    )
+
     return base64.b64encode(png_bytes).decode("utf-8")
 
 
@@ -241,6 +294,14 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     png_bytes = _overlay_logo_on_png_bytes(
         png_bytes,
         alpha=0.9,
+        scale=0.08,
+        padding=20
+    )
+
+    # ✅ QR code
+    png_bytes = _overlay_qr_on_png_bytes(
+        png_bytes,
+        alpha=1.0,
         scale=0.08,
         padding=20
     )
