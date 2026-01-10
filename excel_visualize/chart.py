@@ -22,27 +22,29 @@ def _clean_name(name: str, province: str) -> str:
 
 
 # =========================
-# ✅ NEW: Tick label = (khoảng trống) + tên
-# để chừa chỗ cho số thứ tự ở phía "trên" tên
+# ✅ Tick label: đẩy TÊN xuống sâu hơn để tránh đè số
 # =========================
-def _set_xticklabels_with_space(ax, names, rotation=90):
+def _set_xticklabels_with_space(ax, names, rotation=90, fontsize=10, pad=10):
     """
-    Đặt tick label là tên nhưng thêm 1 dòng trống phía trên,
-    để số thứ tự (vẽ bằng ax.text) nằm "trước" tên (theo trục X).
+    - Thêm nhiều dòng trống trước tên để tạo khoảng cho số vòng tròn.
+    - tick_params pad giúp đẩy chữ xuống thêm, tránh đè lên số.
     """
     ax.set_xticks(range(len(names)))
-    ax.set_xticklabels([f"\n{n}" for n in names], rotation=rotation, ha="center")
+    ax.set_xticklabels(
+        [f"\n\n\n{n}" for n in names],  # ✅ tên lùi xuống thêm
+        rotation=rotation,
+        ha="center",
+        fontsize=fontsize
+    )
+    ax.tick_params(axis="x", pad=pad)
 
 
 # =========================
-# ✅ NEW: Vẽ số thứ tự bọc tròn (nằm gần trục X, phía trên tên)
+# ✅ Vẽ số thứ tự bọc tròn (nằm sát trục X)
 # =========================
 def _add_circled_index_above_names(ax, n_items: int, y_offset: float = -0.06, fontsize: int = 10):
     """
-    Vẽ số thứ tự (1..n) bọc tròn, nằm gần trục X và "trước" tên.
-    - y_offset: hệ trục x-axis transform (0 = tại trục X, âm = xuống dưới).
-      Để số nằm ngay dưới trục X và nằm trên phần tên (đã chừa 1 dòng trống),
-      thường dùng -0.05 ~ -0.08.
+    Vẽ số thứ tự (1..n) bọc tròn, nằm trước tên (trên tên).
     """
     for i in range(n_items):
         ax.text(
@@ -177,19 +179,20 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     names = df["Tên rút gọn"].tolist()
     prices = df["Giá số"].tolist()
 
-    fig, ax = plt.subplots(figsize=(20, 7))
+    # ✅ dài + to hơn
+    fig, ax = plt.subplots(figsize=(32, 10))
     bars = ax.bar(range(len(names)), prices, width=0.6)
 
-    # ✅ NEW: số trước, tên sau (tên được đẩy xuống bằng 1 dòng trống)
-    _set_xticklabels_with_space(ax, names, rotation=90)
+    # ✅ số trước, tên sau (tên đẩy xuống)
+    _set_xticklabels_with_space(ax, names, rotation=90, fontsize=10, pad=10)
     _add_circled_index_above_names(ax, len(names), y_offset=-0.06, fontsize=10)
 
-    ax.set_ylabel("USD / m² / năm")
+    ax.set_ylabel("USD / m² / chu kì thuê", fontsize=14)
     ax.set_title(
         f"BIỂU ĐỒ SO SÁNH GIÁ THUÊ ĐẤT {industrial_type.upper()} TỈNH {province.upper()}",
-        fontsize=16,
+        fontsize=20,
         fontweight="bold",
-        pad=15
+        pad=18
     )
 
     max_price = max(prices) if prices else 0
@@ -203,16 +206,16 @@ def plot_price_bar_chart_base64(df, province: str, industrial_type: str) -> str:
             f"{int(height)}",
             ha="center",
             va="bottom",
-            fontsize=9
+            fontsize=10
         )
 
-    # ✅ Chừa chỗ nhiều hơn cho tick label + số vòng tròn
-    fig.subplots_adjust(bottom=0.72)
+    # ✅ chừa chỗ đủ cho tick label + vòng tròn + footer
+    fig.subplots_adjust(bottom=0.55)
 
     _add_footer(fig)
 
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=150)
+    fig.savefig(buffer, format="png", dpi=200)  # ✅ nét hơn
     plt.close(fig)
 
     png_bytes = buffer.getvalue()
@@ -238,19 +241,19 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
     names = df["Tên rút gọn"].tolist()
     areas = df["Tổng diện tích"].tolist()
 
-    fig, ax = plt.subplots(figsize=(20, 7))
+    # ✅ dài + to hơn
+    fig, ax = plt.subplots(figsize=(32, 10))
     bars = ax.bar(range(len(names)), areas, width=0.6, color="green")
 
-    # ✅ NEW: số trước, tên sau
-    _set_xticklabels_with_space(ax, names, rotation=90)
+    _set_xticklabels_with_space(ax, names, rotation=90, fontsize=10, pad=10)
     _add_circled_index_above_names(ax, len(names), y_offset=-0.06, fontsize=10)
 
-    ax.set_ylabel("Diện tích (ha)")
+    ax.set_ylabel("Diện tích (ha)", fontsize=14)
     ax.set_title(
         f"BIỂU ĐỒ SO SÁNH TỔNG DIỆN TÍCH {industrial_type.upper()} TỈNH {province.upper()}",
-        fontsize=16,
+        fontsize=20,
         fontweight="bold",
-        pad=15
+        pad=18
     )
 
     max_area = max(areas) if areas else 0
@@ -264,15 +267,15 @@ def plot_area_bar_chart_base64(df, province: str, industrial_type: str) -> str:
             f"{int(height)}",
             ha="center",
             va="bottom",
-            fontsize=9
+            fontsize=10
         )
 
-    fig.subplots_adjust(bottom=0.72)
+    fig.subplots_adjust(bottom=0.55)
 
     _add_footer(fig)
 
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=150)
+    fig.savefig(buffer, format="png", dpi=200)
     plt.close(fig)
 
     png_bytes = buffer.getvalue()
@@ -309,22 +312,23 @@ def plot_price_bar_chart_two_provinces_base64(
     names1, prices1 = df1["Tên rút gọn"].tolist(), df1["Giá số"].tolist()
     names2, prices2 = df2["Tên rút gọn"].tolist(), df2["Giá số"].tolist()
 
-    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(22, 14))
+    # ✅ dài + to hơn cho 2 tỉnh
+    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(34, 18))
     ax1, ax2 = axes
 
     bars1 = ax1.bar(range(len(names1)), prices1, width=0.6)
-    _set_xticklabels_with_space(ax1, names1, rotation=90)
+    _set_xticklabels_with_space(ax1, names1, rotation=90, fontsize=10, pad=10)
     _add_circled_index_above_names(ax1, len(names1), y_offset=-0.06, fontsize=10)
-    ax1.set_ylabel("USD / m² / năm")
+    ax1.set_ylabel("USD / m² / chu kì thuê", fontsize=13)
     ax1.set_title(f"{industrial_type.upper()} - {province1.upper()}",
-                  fontsize=14, fontweight="bold", pad=10)
+                  fontsize=16, fontweight="bold", pad=10)
 
     bars2 = ax2.bar(range(len(names2)), prices2, width=0.6)
-    _set_xticklabels_with_space(ax2, names2, rotation=90)
+    _set_xticklabels_with_space(ax2, names2, rotation=90, fontsize=10, pad=10)
     _add_circled_index_above_names(ax2, len(names2), y_offset=-0.06, fontsize=10)
-    ax2.set_ylabel("USD / m² / năm")
+    ax2.set_ylabel("USD / m² / chu kì thuê", fontsize=13)
     ax2.set_title(f"{industrial_type.upper()} - {province2.upper()}",
-                  fontsize=14, fontweight="bold", pad=10)
+                  fontsize=16, fontweight="bold", pad=10)
 
     max_all = max((max(prices1) if prices1 else 0), (max(prices2) if prices2 else 0))
     ax1.set_ylim(0, max_all * 1.15 if max_all > 0 else 1)
@@ -332,26 +336,26 @@ def plot_price_bar_chart_two_provinces_base64(
 
     for b in bars1:
         h = b.get_height()
-        ax1.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=9)
+        ax1.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=10)
 
     for b in bars2:
         h = b.get_height()
-        ax2.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=9)
+        ax2.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=10)
 
     fig.suptitle(
         f"BIỂU ĐỒ SO SÁNH GIÁ THUÊ ĐẤT {industrial_type.upper()} GIỮA 2 TỈNH",
-        fontsize=16,
+        fontsize=20,
         fontweight="bold",
         y=0.98
     )
 
-    # ✅ Chừa chỗ nhiều hơn cho tick + vòng tròn
-    fig.subplots_adjust(hspace=0.85, bottom=0.40, top=0.92)
+    # ✅ chừa chỗ đủ cho 2 cụm tick + footer
+    fig.subplots_adjust(hspace=0.90, bottom=0.28, top=0.92)
 
     _add_footer(fig)
 
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=150)
+    fig.savefig(buffer, format="png", dpi=200)
     plt.close(fig)
 
     png_bytes = buffer.getvalue()
@@ -388,22 +392,22 @@ def plot_area_bar_chart_two_provinces_base64(
     names1, areas1 = df1["Tên rút gọn"].tolist(), df1["Tổng diện tích"].tolist()
     names2, areas2 = df2["Tên rút gọn"].tolist(), df2["Tổng diện tích"].tolist()
 
-    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(22, 14))
+    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(34, 18))
     ax1, ax2 = axes
 
     bars1 = ax1.bar(range(len(names1)), areas1, width=0.6, color="green")
-    _set_xticklabels_with_space(ax1, names1, rotation=90)
+    _set_xticklabels_with_space(ax1, names1, rotation=90, fontsize=10, pad=10)
     _add_circled_index_above_names(ax1, len(names1), y_offset=-0.06, fontsize=10)
-    ax1.set_ylabel("Diện tích (ha)")
+    ax1.set_ylabel("Diện tích (ha)", fontsize=13)
     ax1.set_title(f"{industrial_type.upper()} - {province1.upper()}",
-                  fontsize=14, fontweight="bold", pad=10)
+                  fontsize=16, fontweight="bold", pad=10)
 
     bars2 = ax2.bar(range(len(names2)), areas2, width=0.6, color="green")
-    _set_xticklabels_with_space(ax2, names2, rotation=90)
+    _set_xticklabels_with_space(ax2, names2, rotation=90, fontsize=10, pad=10)
     _add_circled_index_above_names(ax2, len(names2), y_offset=-0.06, fontsize=10)
-    ax2.set_ylabel("Diện tích (ha)")
+    ax2.set_ylabel("Diện tích (ha)", fontsize=13)
     ax2.set_title(f"{industrial_type.upper()} - {province2.upper()}",
-                  fontsize=14, fontweight="bold", pad=10)
+                  fontsize=16, fontweight="bold", pad=10)
 
     max_all = max((max(areas1) if areas1 else 0), (max(areas2) if areas2 else 0))
     ax1.set_ylim(0, max_all * 1.15 if max_all > 0 else 1)
@@ -411,25 +415,25 @@ def plot_area_bar_chart_two_provinces_base64(
 
     for b in bars1:
         h = b.get_height()
-        ax1.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=9)
+        ax1.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=10)
 
     for b in bars2:
         h = b.get_height()
-        ax2.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=9)
+        ax2.text(b.get_x() + b.get_width() / 2, h, f"{int(h)}", ha="center", va="bottom", fontsize=10)
 
     fig.suptitle(
         f"BIỂU ĐỒ SO SÁNH DIỆN TÍCH {industrial_type.upper()} GIỮA 2 TỈNH",
-        fontsize=16,
+        fontsize=20,
         fontweight="bold",
         y=0.98
     )
 
-    fig.subplots_adjust(hspace=0.85, bottom=0.40, top=0.92)
+    fig.subplots_adjust(hspace=0.90, bottom=0.28, top=0.92)
 
     _add_footer(fig)
 
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=150)
+    fig.savefig(buffer, format="png", dpi=200)
     plt.close(fig)
 
     png_bytes = buffer.getvalue()
