@@ -5,7 +5,8 @@ from .data_adapter import (
 from .chart import (
     plot_price_bar_chart_base64,
     plot_area_bar_chart_base64,
-    plot_price_bar_chart_two_provinces_base64
+    plot_price_bar_chart_two_provinces_base64,
+    plot_area_bar_chart_two_provinces_base64
 )
 from .intent import (
     detect_industrial_type,
@@ -249,6 +250,61 @@ def handle_excel_visualize(message: str, excel_handler):
             },
             "chart_base64": chart_base64
         }
+    
+    # =========================================================
+    # ✅ NEW: 2 TỈNH + AREA → VẼ 2 BIỂU ĐỒ (TRÊN/DƯỚI)
+    # =========================================================
+    if metric == "area" and len(provinces) >= 2 and _is_cross_province_compare(message):
+        p1, p2 = provinces[0], provinces[1]
+
+        df1 = extract_area_data(
+            excel_handler=excel_handler,
+            province=p1,
+            industrial_type=industrial_type
+        )
+        df2 = extract_area_data(
+            excel_handler=excel_handler,
+            province=p2,
+            industrial_type=industrial_type
+        )
+
+        if df1.empty:
+            return {"type": "error", "message": f"Không có dữ liệu {industrial_type.lower()} tại {p1}."}
+        if df2.empty:
+            return {"type": "error", "message": f"Không có dữ liệu {industrial_type.lower()} tại {p2}."}
+
+        df1_filtered = _apply_numeric_filter(df1, metric="area", rule=filter_rule)
+        df2_filtered = _apply_numeric_filter(df2, metric="area", rule=filter_rule)
+
+        if df1_filtered.empty or df2_filtered.empty:
+            cond_text = _format_filter_rule(filter_rule, unit="ha")
+            return {
+                "type": "error",
+                "message": (
+                    f"Một trong hai tỉnh không có dữ liệu thỏa điều kiện {cond_text}."
+                    if cond_text else
+                    "Một trong hai tỉnh không có dữ liệu thỏa điều kiện yêu cầu."
+                )
+            }
+
+        chart_base64 = plot_area_bar_chart_two_provinces_base64(
+            df1_filtered, p1,
+            df2_filtered, p2,
+            industrial_type
+        )
+
+        return {
+            "type": "excel_visualize_area_compare_province",
+            "provinces": [p1, p2],
+            "industrial_type": industrial_type,
+            "metric": "area",
+            "items": {
+                p1: [{"name": row["Tên"], "area": row["Tổng diện tích"]} for _, row in df1_filtered.iterrows()],
+                p2: [{"name": row["Tên"], "area": row["Tổng diện tích"]} for _, row in df2_filtered.iterrows()],
+            },
+            "chart_base64": chart_base64
+        }
+
 
     # =========================
     # 4️⃣ Province (fallback về 1 tỉnh như cũ)
@@ -366,7 +422,7 @@ def handle_excel_visualize(message: str, excel_handler):
         }
 
     # =========================
-    # 6️⃣ Fallback (không bao giờ nên xảy ra)
+    # 6️⃣ Fallback 
     # =========================
     return {
         "type": "error",
