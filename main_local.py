@@ -21,7 +21,8 @@ from pathlib import Path
 import inspect
 
 from excel_query.excel_query import ExcelQueryHandler
-
+from fastapi import Request
+import uuid
 
 # ===============================
 # Helper: parse JSON string (flowchart/excel json từ pipeline)
@@ -89,6 +90,7 @@ except Exception as e:
 class Question(BaseModel):
     question: str
     phone: Optional[str] = None
+    session_id: Optional[str] = None
     name: Optional[str] = None
     url: Optional[str] = None
 
@@ -126,23 +128,23 @@ BASE_DIR = Path(__file__).resolve().parent
 EXCEL_FILE_PATH = str(BASE_DIR / "data" / "IIPMap_FULL_63_COMPLETE.xlsx")
 GEOJSON_IZ_PATH = str(BASE_DIR / "map_ui" / "industrial_zones.geojson")
 
-# ✅ Check tồn tại để test local dễ debug
+#  Check tồn tại để test local dễ debug
 if not Path(EXCEL_FILE_PATH).exists():
-    print(f"❌ [LOCAL] Không tìm thấy EXCEL_FILE_PATH: {EXCEL_FILE_PATH}")
+    print(f" [LOCAL] Không tìm thấy EXCEL_FILE_PATH: {EXCEL_FILE_PATH}")
 else:
-    print(f"✅ [LOCAL] EXCEL_FILE_PATH: {EXCEL_FILE_PATH}")
+    print(f" [LOCAL] EXCEL_FILE_PATH: {EXCEL_FILE_PATH}")
 
 if not Path(GEOJSON_IZ_PATH).exists():
-    print(f"❌ [LOCAL] Không tìm thấy GEOJSON_IZ_PATH: {GEOJSON_IZ_PATH}")
+    print(f" [LOCAL] Không tìm thấy GEOJSON_IZ_PATH: {GEOJSON_IZ_PATH}")
 else:
-    print(f"✅ [LOCAL] GEOJSON_IZ_PATH: {GEOJSON_IZ_PATH}")
+    print(f" [LOCAL] GEOJSON_IZ_PATH: {GEOJSON_IZ_PATH}")
 
 excel_kcn_handler = ExcelQueryHandler(
     excel_path=EXCEL_FILE_PATH,
     geojson_path=GEOJSON_IZ_PATH
 )
 
-print("✅ [LOCAL] Endpoints test nhanh:")
+print(" [LOCAL] Endpoints test nhanh:")
 print("   - GET  http://127.0.0.1:10000/")
 print("   - POST http://127.0.0.1:10000/chat  body: {\"question\":\"Danh sách khu công nghiệp ở Bắc Ninh\"}")
 print("   - POST http://127.0.0.1:10000/chat  body: {\"question\":\"Vẽ flowchart luồng web nông dân\"}")
@@ -180,11 +182,16 @@ async def home():
 # 4️⃣ Route chính: /chat (POST)
 # ---------------------------------------
 @app_fastapi.post("/chat", summary="Dự đoán/Trả lời câu hỏi từ Chatbot")
-async def predict(data: Question):
+async def predict(data: Question, request: Request):
     question = (data.question or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="Thiếu trường 'question' hoặc câu hỏi bị rỗng.")
-
+    session = (
+        (data.session_id or "").strip()
+        or (request.headers.get("X-Session-Id") or "").strip()
+    )
+    if not session:
+        session = f"anon-{uuid.uuid4()}"
     try:
         answer: Optional[str] = None
         requires_contact = False
@@ -200,7 +207,7 @@ async def predict(data: Question):
             response = await run_in_threadpool(
                 app.chatbot.invoke,
                 {"message": question, "law_count": payload["total_laws"]},
-                config={"configurable": {"session_id": "api_session"}}
+                config={"configurable": {"session_id": session}}
             )
 
             # ✅ NEW: parse flowchart json nếu có
@@ -317,7 +324,6 @@ async def predict(data: Question):
         # 2️⃣ FALLBACK: gọi chatbot thật
         # ===============================
         if CHATBOT_AVAILABLE and hasattr(app, "chatbot") and hasattr(app.chatbot, "invoke"):
-            session = "api_session"
             try:
                 # invoke async hay sync?
                 if inspect.iscoroutinefunction(app.chatbot.invoke):
@@ -340,7 +346,7 @@ async def predict(data: Question):
                 else:
                     answer = f"Lỗi: Chatbot trả về định dạng không mong muốn: {repr(response)}"
 
-                # ✅ NEW: parse JSON string từ pipeline (FLOWCHART)
+                #  NEW: parse JSON string từ pipeline (FLOWCHART)
                 parsed = try_parse_json_string(answer)
                 if isinstance(parsed, dict) and parsed.get("type") == "flowchart":
                     return {
@@ -359,7 +365,7 @@ async def predict(data: Question):
                     requires_contact = True
 
             except Exception as invoke_error:
-                print(f"❌ [LOCAL] Lỗi khi gọi chatbot.invoke: {invoke_error}")
+                print(f" [LOCAL] Lỗi khi gọi chatbot.invoke: {invoke_error}")
                 answer = "Xin lỗi, đã xảy ra lỗi khi xử lý câu hỏi của bạn."
         else:
             answer = f"(Chatbot mô phỏng - LỖI BACKEND: Không tìm thấy đối tượng app.chatbot) Bạn hỏi: '{question}'"
@@ -374,14 +380,18 @@ async def predict(data: Question):
                     data.name or ""
                 )
             except Exception as sheet_error:
-                print(f"⚠️ [LOCAL] Lỗi ghi Google Sheet: {sheet_error}")
+                print(f" [LOCAL] Lỗi ghi Google Sheet: {sheet_error}")
 
-        return {"answer": answer, "requires_contact": requires_contact}
+        return {
+            "answer": answer,
+            "requires_contact": requires_contact,
+            "session_id": session
+        }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [LOCAL] LỖI CHATBOT: {e}")
+        print(f" [LOCAL] LỖI CHATBOT: {e}")
         raise HTTPException(status_code=500, detail=f"Lỗi xử lý Chatbot: {str(e)}")
 
 

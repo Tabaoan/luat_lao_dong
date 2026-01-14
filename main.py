@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -8,6 +8,7 @@ from typing import Optional, Any, Dict
 from pathlib import Path
 import json
 import inspect
+import uuid
 
 from starlette.concurrency import run_in_threadpool
 
@@ -27,13 +28,13 @@ from excel_query.excel_query import ExcelQueryHandler
 # Import Chatbot từ app.py
 # ===============================
 try:
-    import app  # app.py của bạn (LangChain chatbot + vectordb + llm + emb + excel_handler + sheet funcs)
+    import app  # app.py: LangChain chatbot + vectordb + llm + emb + excel_handler + sheet funcs
     CHATBOT_AVAILABLE = True
     print("✅ Đã import thành công module 'app'")
 except ImportError as e:
     app = None
     CHATBOT_AVAILABLE = False
-    print(f"WARNING: Could not import 'app' module. Error: {e}")
+    print(f"⚠️ Could not import 'app' module. Error: {e}")
 
 
 # ===============================
@@ -65,7 +66,8 @@ if CHATBOT_AVAILABLE and hasattr(app, "CONTACT_TRIGGER_RESPONSE"):
     print("✅ Đã load CONTACT_TRIGGER_RESPONSE từ app.py")
 else:
     CONTACT_TRIGGER_RESPONSE = (
-        "Anh/chị vui lòng để lại tên và số điện thoại, chuyên gia của IIP sẽ liên hệ và giải đáp các yêu cầu của anh/chị ạ."
+        "Anh/chị vui lòng để lại tên và số điện thoại, chuyên gia của IIP sẽ liên hệ "
+        "và giải đáp các yêu cầu của anh/chị ạ."
     )
     print("⚠️ Sử dụng CONTACT_TRIGGER_RESPONSE mặc định")
 
@@ -79,22 +81,21 @@ try:
         SHEET_AVAILABLE = True
         print("✅ Google Sheet functions đã sẵn sàng từ app.py")
     else:
-        print("WARNING: Google Sheet functions not found in app.py")
+        print("⚠️ Google Sheet functions not found in app.py")
 except Exception as e:
-    print(f"WARNING: Error checking Google Sheet availability: {e}")
+    print(f"⚠️ Error checking Google Sheet availability: {e}")
 
 
 # --- Khai báo Model cho dữ liệu đầu vào ---
 class Question(BaseModel):
-    """Định nghĩa cấu trúc dữ liệu JSON đầu vào."""
     question: str
     phone: Optional[str] = None
+    session_id: Optional[str] = None  # ✅ thêm để giữ lịch sử như main_local
     name: Optional[str] = None
     url: Optional[str] = None
 
 
 class ContactInfo(BaseModel):
-    """Định nghĩa cấu trúc dữ liệu cho thông tin liên hệ."""
     original_question: str
     phone: str
     name: Optional[str] = None
@@ -119,9 +120,11 @@ app_fastapi.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------------------------------
+# 2️⃣ Init ExcelQueryHandler (KCN/CCN)
+# ---------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
 
-# ✅ Local Excel + GeoJSON cho map (KCN/CCN)
 EXCEL_FILE_PATH = str(BASE_DIR / "data" / "IIPMap_FULL_63_COMPLETE.xlsx")
 GEOJSON_IZ_PATH = str(BASE_DIR / "map_ui" / "industrial_zones.geojson")
 
@@ -132,7 +135,7 @@ excel_kcn_handler = ExcelQueryHandler(
 
 
 # ---------------------------------------
-# 2️⃣ Route kiểm tra hoạt động (GET /)
+# 3️⃣ Route kiểm tra hoạt động (GET /)
 # ---------------------------------------
 @app_fastapi.get("/", summary="Kiểm tra trạng thái API")
 async def home():
@@ -153,18 +156,28 @@ async def home():
         "chatbot_status": "Available" if CHATBOT_AVAILABLE else "Not Available",
         "vectordb_status": vectordb_status,
         "sheet_status": "Available" if SHEET_AVAILABLE else "Not Available",
-        "contact_trigger": CONTACT_TRIGGER_RESPONSE
+        "contact_trigger": CONTACT_TRIGGER_RESPONSE,
+        "excel_file_exists": Path(EXCEL_FILE_PATH).exists(),
+        "geojson_file_exists": Path(GEOJSON_IZ_PATH).exists(),
     }
 
 
 # ---------------------------------------
-# 3️⃣ Route chính: /chat (POST)
+# 4️⃣ Route chính: /chat (POST)
 # ---------------------------------------
-@app_fastapi.post("/chat", summary="Dự đoán/Trả lời câu hỏi từ Chatbot")
-async def predict(data: Question):
+@app_fastapi.post("/chat", summary="Trả lời câu hỏi từ Chatbot (có lịch sử theo session_id)")
+async def predict(data: Question, request: Request):
     question = (data.question or "").strip()
     if not question:
-        raise HTTPException(status_code=400, detail="Thiếu trường 'question' trong JSON hoặc câu hỏi bị rỗng.")
+        raise HTTPException(status_code=400, detail="Thiếu trường 'question' hoặc câu hỏi bị rỗng.")
+
+    # ✅ Lấy session_id giống main_local
+    session = (
+        (data.session_id or "").strip()
+        or (request.headers.get("X-Session-Id") or "").strip()
+    )
+    if not session:
+        session = f"anon-{uuid.uuid4()}"
 
     try:
         answer: Optional[str] = None
@@ -175,16 +188,19 @@ async def predict(data: Question):
         # ===============================
         payload = handle_law_count_query(question)
         if isinstance(payload, dict) and payload.get("intent") == "law_count":
+            if not CHATBOT_AVAILABLE or not hasattr(app, "chatbot"):
+                return {
+                    "answer": "Backend chưa sẵn sàng (không import được app.py/chatbot).",
+                    "requires_contact": False,
+                    "session_id": session
+                }
+
             response = await run_in_threadpool(
                 app.chatbot.invoke,
-                {
-                    "message": question,
-                    "law_count": payload["total_laws"],
-                },
-                config={"configurable": {"session_id": "api_session"}},
+                {"message": question, "law_count": payload["total_laws"]},
+                config={"configurable": {"session_id": session}}
             )
 
-            # response thường là string, nhưng cứ xử lý parse JSON nếu có
             parsed = try_parse_json_string(response)
             if isinstance(parsed, dict) and parsed.get("type") == "flowchart":
                 return {
@@ -193,46 +209,55 @@ async def predict(data: Question):
                     "payload": {
                         "format": parsed.get("format", "mermaid"),
                         "code": parsed.get("code", ""),
-                        "explanation": parsed.get("explanation", ""),
+                        "explanation": parsed.get("explanation", "")
                     },
                     "requires_contact": False,
+                    "session_id": session
                 }
 
-            return {"answer": response, "requires_contact": False}
+            return {"answer": response, "requires_contact": False, "session_id": session}
 
         # ===============================
         # 1️⃣ MST INTENT (ƯU TIÊN CAO NHẤT)
         # ===============================
         if is_mst_query(question):
             if not CHATBOT_AVAILABLE:
-                return {"answer": "Backend chưa sẵn sàng (không import được app.py).", "requires_contact": False}
+                return {
+                    "answer": "Backend chưa sẵn sàng (không import được app.py).",
+                    "requires_contact": False,
+                    "session_id": session
+                }
 
             mst_answer = await run_in_threadpool(
                 handle_mst_query,
                 message=question,
                 llm=app.llm,
-                embedding=app.emb,
+                embedding=app.emb
             )
-            return {"answer": mst_answer, "requires_contact": False}
+            return {"answer": mst_answer, "requires_contact": False, "session_id": session}
 
         # ===============================
-        # 2️⃣ EXCEL VISUALIZE INTENT
+        # 2️⃣ EXCEL VISUALIZE
         # ===============================
         if is_excel_visualize_intent(question):
             if not CHATBOT_AVAILABLE:
-                return {"answer": "Backend chưa sẵn sàng (không import được app.py).", "requires_contact": False}
+                return {
+                    "answer": "Backend chưa sẵn sàng (không import được app.py).",
+                    "requires_contact": False,
+                    "session_id": session
+                }
 
             excel_result = await run_in_threadpool(
                 handle_excel_visualize,
                 message=question,
-                excel_handler=app.excel_handler,
+                excel_handler=app.excel_handler
             )
-
             return {
                 "answer": "Đây là biểu đồ do Chatiip tạo cho bạn: ",
                 "type": "excel_visualize",
                 "payload": excel_result,
                 "requires_contact": False,
+                "session_id": session
             }
 
         # ===============================
@@ -241,7 +266,7 @@ async def predict(data: Question):
         handled, excel_payload = await run_in_threadpool(
             excel_kcn_handler.process_query,
             question,
-            True,  # return_json=True
+            True  # return_json=True
         )
 
         if handled and excel_payload:
@@ -257,21 +282,20 @@ async def predict(data: Question):
                     "type": "excel_query",
                     "map_intent": None,
                     "requires_contact": False,
+                    "session_id": session
                 }
 
             iz_list = []
             if isinstance(excel_obj, dict):
-                for r in (excel_obj.get("data", []) or []):
+                for r in excel_obj.get("data", []) or []:
                     coords = r.get("coordinates")
                     if isinstance(coords, list) and len(coords) == 2:
-                        iz_list.append(
-                            {
-                                "name": r.get("Tên", ""),
-                                "kind": r.get("Loại", excel_obj.get("type")),
-                                "address": r.get("Địa chỉ", ""),
-                                "coordinates": coords,
-                            }
-                        )
+                        iz_list.append({
+                            "name": r.get("Tên", ""),
+                            "kind": r.get("Loại", excel_obj.get("type")),
+                            "address": r.get("Địa chỉ", ""),
+                            "coordinates": coords
+                        })
 
             province = excel_obj.get("province") if isinstance(excel_obj, dict) else None
 
@@ -280,13 +304,13 @@ async def predict(data: Question):
                     "type": "province",
                     "province": province,
                     "iz_list": iz_list,
-                    "kind": excel_obj.get("type") if isinstance(excel_obj, dict) else None,
+                    "kind": excel_obj.get("type")
                 }
             else:
                 map_intent = {
                     "type": "points",
                     "iz_list": iz_list,
-                    "kind": excel_obj.get("type") if isinstance(excel_obj, dict) else None,
+                    "kind": excel_obj.get("type") if isinstance(excel_obj, dict) else None
                 }
 
             return {
@@ -294,32 +318,26 @@ async def predict(data: Question):
                 "type": "excel_query",
                 "map_intent": map_intent,
                 "requires_contact": False,
+                "session_id": session
             }
 
         # ===============================
-        # 4️⃣ FALLBACK: GỌI CHATBOT (RAG/PDF PIPELINE)
+        # 4️⃣ FALLBACK: gọi chatbot thật (RAG/PDF pipeline)
         # ===============================
-        if CHATBOT_AVAILABLE and hasattr(app, "chatbot"):
-            session = "api_session"
-
-            if not hasattr(app.chatbot, "invoke"):
-                return {"answer": "Lỗi: Chatbot không có phương thức invoke", "requires_contact": False}
-
+        if CHATBOT_AVAILABLE and hasattr(app, "chatbot") and hasattr(app.chatbot, "invoke"):
             try:
-                # invoke async hay sync?
                 if inspect.iscoroutinefunction(app.chatbot.invoke):
                     response = await app.chatbot.invoke(
                         {"message": question},
-                        config={"configurable": {"session_id": session}},
+                        config={"configurable": {"session_id": session}}
                     )
                 else:
                     response = await run_in_threadpool(
                         app.chatbot.invoke,
                         {"message": question},
-                        config={"configurable": {"session_id": session}},
+                        config={"configurable": {"session_id": session}}
                     )
 
-                # Chuẩn hoá response -> string
                 if isinstance(response, dict) and "output" in response:
                     answer = response["output"]
                 elif isinstance(response, str):
@@ -327,7 +345,6 @@ async def predict(data: Question):
                 else:
                     answer = f"Lỗi: Chatbot trả về định dạng không mong muốn: {repr(response)}"
 
-                # ✅ NEW: Nếu pipeline trả JSON string (flowchart/...)
                 parsed = try_parse_json_string(answer)
                 if isinstance(parsed, dict) and parsed.get("type") == "flowchart":
                     return {
@@ -336,20 +353,18 @@ async def predict(data: Question):
                         "payload": {
                             "format": parsed.get("format", "mermaid"),
                             "code": parsed.get("code", ""),
-                            "explanation": parsed.get("explanation", ""),
+                            "explanation": parsed.get("explanation", "")
                         },
                         "requires_contact": False,
+                        "session_id": session
                     }
 
-                # Trigger contact giống app.py
                 if answer and answer.strip() == CONTACT_TRIGGER_RESPONSE.strip():
                     requires_contact = True
-                    print(f"🔔 TRIGGER PHÁT HIỆN: Câu hỏi '{question}' cần thu thập thông tin liên hệ")
 
             except Exception as invoke_error:
                 print(f"❌ Lỗi khi gọi chatbot.invoke: {invoke_error}")
                 answer = "Xin lỗi, đã xảy ra lỗi khi xử lý câu hỏi của bạn."
-
         else:
             answer = (
                 f"(Chatbot mô phỏng - LỖI BACKEND: Không tìm thấy đối tượng app.chatbot) "
@@ -365,54 +380,43 @@ async def predict(data: Question):
                     app.save_contact_info,
                     question,
                     data.phone,
-                    data.name or "",
+                    data.name or ""
                 )
-                print(f"✅ Đã ghi thông tin liên hệ sớm: {data.phone}")
             except Exception as sheet_error:
                 print(f"⚠️ Lỗi ghi Google Sheet: {sheet_error}")
 
-        return {"answer": answer, "requires_contact": requires_contact}
+        return {
+            "answer": answer,
+            "requires_contact": requires_contact,
+            "session_id": session
+        }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"LỖI CHATBOT: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi xử lý Chatbot: {str(e)}. Vui lòng kiểm tra log backend của bạn.",
-        )
+        print(f"❌ LỖI CHATBOT: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi xử lý Chatbot: {str(e)}")
 
 
 # ---------------------------------------
-# 4️⃣ Route mới: /submit-contact (POST)
+# 5️⃣ Route: /submit-contact (POST)
 # ---------------------------------------
 @app_fastapi.post("/submit-contact", summary="Gửi thông tin liên hệ sau khi chatbot yêu cầu")
 async def submit_contact(data: ContactInfo):
     if not SHEET_AVAILABLE or not CHATBOT_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Google Sheet không khả dụng. Vui lòng kiểm tra cấu hình server.",
-        )
+        raise HTTPException(status_code=503, detail="Google Sheet không khả dụng.")
 
     phone = (data.phone or "").strip()
     if not app.is_valid_phone(phone):
-        raise HTTPException(
-            status_code=400,
-            detail="Số điện thoại không hợp lệ. Vui lòng nhập số điện thoại hợp lệ (tối thiểu 7 ký tự, chỉ chứa số, khoảng trắng hoặc dấu gạch ngang).",
-        )
+        raise HTTPException(status_code=400, detail="Số điện thoại không hợp lệ.")
 
     try:
         await run_in_threadpool(
             app.save_contact_info,
             data.original_question,
             phone,
-            data.name or "",
+            data.name or ""
         )
-
-        print("✅ Đã lưu thông tin liên hệ:")
-        print(f"   - Câu hỏi: {data.original_question}")
-        print(f"   - Phone: {phone}")
-        print(f"   - Name: {data.name or 'Không cung cấp'}")
 
         return {
             "success": True,
@@ -420,20 +424,17 @@ async def submit_contact(data: ContactInfo):
             "contact_saved": {
                 "question": data.original_question,
                 "phone": phone,
-                "name": data.name or "",
-            },
+                "name": data.name or ""
+            }
         }
 
     except Exception as e:
         print(f"❌ Lỗi khi lưu thông tin liên hệ: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Không thể lưu thông tin liên hệ. Lỗi: {str(e)}",
-        )
+        raise HTTPException(status_code=500, detail=f"Không thể lưu thông tin liên hệ. Lỗi: {str(e)}")
 
 
 # ---------------------------------------
-# 5️⃣ Route kiểm tra trạng thái VectorDB
+# 6️⃣ Route: /status (GET)
 # ---------------------------------------
 @app_fastapi.get("/status", summary="Kiểm tra trạng thái chi tiết của hệ thống")
 async def get_status():
@@ -442,7 +443,7 @@ async def get_status():
             "chatbot": "Not Available",
             "vectordb": "Unknown",
             "google_sheet": "Unknown",
-            "error": "Module app.py không được import thành công",
+            "error": "Module app.py không được import thành công"
         }
 
     vectordb_info: Dict[str, Any] = {}
@@ -453,14 +454,14 @@ async def get_status():
             "index_name": stats.get("name", "Unknown"),
             "total_documents": stats.get("total_documents", 0),
             "dimension": stats.get("dimension", 0),
-            "exists": stats.get("exists", False),
+            "exists": stats.get("exists", False)
         }
     except Exception as e:
         vectordb_info = {"status": "Error", "error": str(e)}
 
     sheet_info = {
         "status": "Available" if SHEET_AVAILABLE else "Not Available",
-        "sheet_id": os.getenv("GOOGLE_SHEET_ID", "Not configured"),
+        "sheet_id": os.getenv("GOOGLE_SHEET_ID", "Not configured")
     }
 
     return {
@@ -468,13 +469,38 @@ async def get_status():
         "vectordb": vectordb_info,
         "google_sheet": sheet_info,
         "trigger_response": CONTACT_TRIGGER_RESPONSE,
+        "excel_file": EXCEL_FILE_PATH,
+        "geojson_file": GEOJSON_IZ_PATH
     }
 
+# Điền ra cuộc lịch sử hội thoại
+
+@app_fastapi.get("/history/{session_id}", summary="Lấy lịch sử hội thoại")
+async def get_chat_history(session_id: str):
+    if not CHATBOT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Chatbot not available")
+
+    try:
+        history = app.get_history(session_id)
+        messages = []
+
+        for m in history.messages:
+            messages.append({
+                "role": m.type,   # human / ai / system
+                "content": m.content
+            })
+
+        return {
+            "session_id": session_id,
+            "messages": messages
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ---------------------------------------
-# 6️⃣ Khởi động server Uvicorn (FastAPI)
+# 7️⃣ Run server
 # ---------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    # file này tên main.py => "main:app_fastapi"
     uvicorn.run("main:app_fastapi", host="0.0.0.0", port=port, log_level="info", reload=True)

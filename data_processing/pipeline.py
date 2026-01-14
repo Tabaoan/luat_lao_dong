@@ -65,6 +65,67 @@ FLOWCHART_EXPLAIN_SYS = (
     "- Dùng đúng ngôn ngữ của người dùng.\n"
 )
 
+FOLLOWUP_ANCHOR_SYS = (
+    "Bạn đang trả lời trong một hội thoại nhiều lượt.\n"
+    "QUY TẮC BẮT BUỘC:\n"
+    "- Nếu câu hỏi hiện tại có tham chiếu như 'điều luật trên', 'nội dung trên', 'vừa nêu', 'ở trên'...\n"
+    "  thì phải hiểu là đang hỏi tiếp nội dung trong lịch sử hội thoại.\n"
+    "- TUYỆT ĐỐI không được tự chuyển sang văn bản/tài liệu khác.\n"
+    "- Nếu lịch sử hội thoại không đủ để xác định điều/văn bản, hãy hỏi lại 1 câu làm rõ.\n"
+)
+
+
+# Phân loại lịch sử hội thoại: 
+def llm_is_followup(
+    clean_question: str,
+    history: List[BaseMessage],
+    lang_llm
+) -> bool:
+    """
+    Trả về:
+    - True  → câu hỏi hiện tại là follow-up của hội thoại trước
+    - False → câu hỏi mới / đổi chủ đề
+    """
+
+    if not history:
+        return False
+
+    # chỉ lấy vài lượt gần nhất để tiết kiệm token
+    recent = history[-6:]
+
+    history_text = "\n".join(
+        f"{m.type.upper()}: {m.content}"
+        for m in recent
+        if getattr(m, "content", None)
+    )
+
+    prompt = f"""
+Bạn là bộ phân loại ngữ cảnh hội thoại.
+
+NHIỆM VỤ:
+- Xác định câu hỏi hiện tại có đang hỏi tiếp nội dung trong hội thoại trước hay không.
+
+HỘI THOẠI TRƯỚC:
+{history_text}
+
+CÂU HỎI HIỆN TẠI:
+{clean_question}
+
+QUY TẮC:
+- Trả về FOLLOW_UP nếu câu hỏi đang tiếp tục, làm rõ, mở rộng nội dung trước đó.
+- Trả về NEW_TOPIC nếu câu hỏi chuyển sang chủ đề hoặc văn bản pháp luật khác.
+
+CHỈ TRẢ VỀ MỘT TỪ DUY NHẤT:
+FOLLOW_UP hoặc NEW_TOPIC
+""".strip()
+
+    try:
+        result = lang_llm.invoke(
+            [HumanMessage(content=prompt)]
+        ).content.strip().upper()
+        return result == "FOLLOW_UP"
+    except Exception:
+        return True
 # ======================================================
 # PIPELINE TRUNG TÂM
 # ======================================================
@@ -201,58 +262,84 @@ Trả lời bằng ngôn ngữ: {user_lang}.
     is_vsic_query = is_vsic_code_query(clean_question)
 
     # ============================
-    # 4️⃣ RAG THƯỜNG
-    # ============================
+# 4️⃣ RAG THƯỜNG (LLM quyết định dùng history hay không)
+# ============================
     if not is_vsic_query:
+
+        # ---- BƯỚC 1: DÙNG LLM PHÂN LOẠI NGỮ CẢNH ----
+        use_history = llm_is_followup(clean_question, history, lang_llm)
+
+        # ==================================================
+        # CASE A: FOLLOW-UP → TRẢ LỜI THEO HISTORY
+        # ==================================================
+        if use_history:
+            system_prompt = PDF_READER_SYS + f"\n\nNgười dùng đang dùng ngôn ngữ: '{user_lang}'."
+            messages = [SystemMessage(content=system_prompt)]
+
+            # nạp history
+            messages.extend(history[-10:])
+
+            messages.append(
+                HumanMessage(
+                    content=f"""
+    Câu hỏi hiện tại (nối tiếp hội thoại trước đó):
+    {clean_question}
+
+    YÊU CẦU BẮT BUỘC:
+    - Đây là câu hỏi FOLLOW-UP.
+    - PHẢI trả lời dựa trên văn bản/vấn đề pháp lý đã được xác định trong lịch sử hội thoại.
+    - TUYỆT ĐỐI không chuyển sang văn bản pháp luật khác nếu người dùng không nêu rõ.
+    - Nếu lịch sử chưa đủ để xác định điều/khoản cụ thể, hãy hỏi lại 1 câu làm rõ.
+
+    Trả lời bằng ngôn ngữ: {user_lang}.
+    """
+                )
+            )
+
+            response = llm.invoke(messages).content
+            return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
+
+        # ==================================================
+        # CASE B: NEW_TOPIC → COI NHƯ CÂU HỎI MỚI, CHẠY RAG
+        # ==================================================
         hits = retriever.invoke(clean_question) if retriever else []
         has_context = bool(hits)
         context = build_context_from_hits(hits) if has_context else ""
 
         system_prompt = PDF_READER_SYS + f"\n\nNgười dùng đang dùng ngôn ngữ: '{user_lang}'."
         messages = [SystemMessage(content=system_prompt)]
-        if history:
-            messages.extend(history[-10:])
 
-        labor_related = is_labor_related_question(clean_question)
-
-        if has_context and labor_related:
+        if has_context:
             human = f"""
-Câu hỏi: {clean_question}
+    Câu hỏi: {clean_question}
 
-Nội dung liên quan:
-{context}
+    Nội dung liên quan:
+    {context}
 
+    Hãy trả lời đầy đủ, chính xác theo tài liệu.
+    Trả lời bằng ngôn ngữ: {user_lang}.
+    """
+            messages.append(HumanMessage(content=human))
+            response = llm.invoke(messages).content
+            return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
 
-Trả lời bằng ngôn ngữ: {user_lang}.
-"""
-        elif has_context:
-            human = f"""
-Câu hỏi: {clean_question}
+        # ==================================================
+        # CASE C: KHÔNG CÓ CONTEXT → OUT OF SCOPE
+        # ==================================================
+        out_of_scope_vi = (
+            "Tôi là chatbot chuyên tư vấn và tra cứu thông tin trong các lĩnh vực: "
+            "pháp luật (luật, nghị định, thông tư, quyết định), "
+            "ngành nghề kinh doanh, mã số thuế và thông tin doanh nghiệp, "
+            "kế toán – thuế, lao động – việc làm, "
+            "cũng như bất động sản công nghiệp "
+            "(khu công nghiệp, cụm công nghiệp, nhà xưởng cho thuê/bán "
+            "và các thủ tục pháp lý liên quan). "
+            "Tôi chỉ hỗ trợ các câu hỏi thuộc những lĩnh vực nêu trên; "
+            "bạn vui lòng đặt câu hỏi phù hợp để tôi có thể hỗ trợ chính xác."
+        )
 
-Nội dung liên quan:
-{context}
+        return out_of_scope_vi if user_lang == "vi" else convert_language(out_of_scope_vi, user_lang, lang_llm)
 
-Hãy trả lời đầy đủ, chính xác theo tài liệu.
-Trả lời bằng ngôn ngữ: {user_lang}.
-"""
-        else:
-            # ✅ CHỈ SỬA ĐOẠN NÀY: nếu không liên quan / không rõ / không có căn cứ phù hợp → trả theo mẫu yêu cầu
-            out_of_scope_vi = (
-                "Tôi là chatbot chuyên tư vấn và tra cứu thông tin trong các lĩnh vực: "
-                "pháp luật (luật, nghị định, thông tư, quyết định), "
-                "ngành nghề kinh doanh, mã số thuế và thông tin doanh nghiệp, "
-                "kế toán – thuế, lao động – việc làm, "
-                "cũng như bất động sản công nghiệp "
-                "(khu công nghiệp, cụm công nghiệp, nhà xưởng cho thuê/bán "
-                "và các thủ tục pháp lý liên quan). "
-                "Tôi chỉ hỗ trợ các câu hỏi thuộc những lĩnh vực nêu trên; "
-                "bạn vui lòng đặt câu hỏi phù hợp để tôi có thể hỗ trợ chính xác."
-            )
-            return out_of_scope_vi if user_lang == "vi" else convert_language(out_of_scope_vi, user_lang, lang_llm)
-
-        messages.append(HumanMessage(content=human))
-        response = llm.invoke(messages).content
-        return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
 
     # ============================
     # 5️⃣ VSIC 2025 ↔ 2018

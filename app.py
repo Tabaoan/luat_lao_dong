@@ -12,8 +12,8 @@ load_dotenv(override=True)
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.runnables import RunnableLambda
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_community.chat_message_histories import ChatMessageHistory
-
+# from langchain_community.chat_message_histories import ChatMessageHistory
+from user_history.langchain_history import SupabaseChatMessageHistory
 # Pinecone
 from pinecone import Pinecone as PineconeClient
 from langchain_pinecone import Pinecone
@@ -213,13 +213,10 @@ def pdf_dispatch(i: Dict):
 
 
 pdf_chain = RunnableLambda(pdf_dispatch)
-store: Dict[str, ChatMessageHistory] = {}
-
 
 def get_history(session_id: str):
-    if session_id not in store:
-        store[session_id] = ChatMessageHistory()
-    return store[session_id]
+    # limit = số messages gần nhất (human+ai+system)
+    return SupabaseChatMessageHistory(session_id=session_id, limit=40)
 
 
 chatbot = RunnableWithMessageHistory(
@@ -250,7 +247,7 @@ def handle_command(command: str, session: str) -> bool:
         return False
 
     if cmd == "clear":
-        store.get(session, ChatMessageHistory()).clear()
+        get_history(session).clear()
         print(" Đã xóa lịch sử\n")
         return True
 
