@@ -321,12 +321,17 @@ if __name__ == "__main__":
 
             # ================= EXCEL VISUALIZE INTENT =================
             if is_excel_visualize_intent(message):
-                excel_response = handle_excel_visualize(
-                    message=message,
-                    excel_handler=excel_handler,
-                )
+                # Code mới (RAG tự quản lý data, không cần truyền handler vào):
+                excel_response = handle_excel_visualize(message=message)
+                # -----------------------
+
                 if excel_response:
-                    print(f"\n Bot:\n{excel_response}\n")
+                    import json
+                    try:
+                        print(f"\n Bot (Visualize JSON):\n{json.dumps(excel_response, ensure_ascii=False, indent=2)}\n")
+                    except:
+                        print(f"\n Bot:\n{excel_response}\n")
+                    
                     print("-" * 80)
                     continue
 

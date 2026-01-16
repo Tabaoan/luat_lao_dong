@@ -1,153 +1,88 @@
-# data_adapter.py
-
+# File: excel_visualize/data_adapter.py
 import pandas as pd
-import re
 from typing import Optional
 
-
 # ==================================================
-# 0️⃣ PARSE HELPERS
+# 1. Các hàm Parse (Chuyển text sang số)
 # ==================================================
 def _parse_price_to_float(value) -> Optional[float]:
     """
-    Chuẩn hóa giá thuê đất:
-    - '120 USD/m²/năm' -> 120
-    - '85-95 USD/m²/năm' -> 90
+    Chuyển đổi giá thuê đất sang số float.
+    VD: "120 USD/m2/năm" -> 120.0
+        "80 - 100 USD" -> 90.0
     """
     if pd.isna(value):
         return None
 
     s = str(value).lower().strip()
 
-    # bỏ đơn vị
-    for kw in ["usd/m²/năm", "usd/m2/năm", "usd"]:
-        s = s.replace(kw, "")
+    # Loại bỏ các đơn vị thường gặp
+    stop_words = ["usd/m²/năm", "usd/m2/năm", "usd", "/m2", "/năm", "m2"]
+    for word in stop_words:
+        s = s.replace(word, "")
     s = s.strip()
 
-    # trường hợp khoảng giá
+    # Xử lý trường hợp khoảng giá (VD: "80-100") -> Lấy trung bình
     if "-" in s:
         try:
-            a, b = s.split("-")
-            return (float(a.strip()) + float(b.strip())) / 2
-        except Exception:
+            parts = s.split("-")
+            return (float(parts[0]) + float(parts[1])) / 2
+        except:
             return None
 
+    # Xử lý số thông thường
     try:
         return float(s)
-    except Exception:
+    except:
         return None
-
 
 def _parse_area_to_float(value) -> Optional[float]:
     """
-    Chuẩn hóa diện tích:
-    - '77.48 ha'  → 77.48
-    - '120.5'    → 120.5
-    - '250 ha'   → 250.0
-
-    ⚠️ Dấu chấm (.) là thập phân
+    Chuyển đổi diện tích sang số float.
+    VD: "500 ha" -> 500.0
     """
     if pd.isna(value):
         return None
 
     s = str(value).lower().strip()
-
-    # Bỏ đơn vị
-    s = re.sub(r"(ha|hecta)", "", s)
-
-    # Bỏ khoảng trắng
-    s = s.replace(" ", "")
-
+    
+    # Loại bỏ đơn vị, thay dấu phẩy thành chấm
+    s = s.replace("ha", "").replace("hecta", "").replace(",", ".").strip()
+    
     try:
         return float(s)
-    except ValueError:
+    except:
         return None
 
-
 # ==================================================
-# 1️⃣ PRICE DATA
+# 2. Hàm Main: Làm sạch DataFrame
 # ==================================================
-def extract_price_data_by_province(excel_handler, province: str):
-    df = excel_handler.df.copy()
-
-    df_filtered = df[
-        df["Tỉnh/Thành phố"].astype(str).str.lower().str.strip() == province.lower()
-    ][["Tên", "Giá thuê đất"]].copy()
-
-    # ✅ chuẩn hóa giá thành số để lọc/sort
-    df_filtered["Giá số"] = df_filtered["Giá thuê đất"].apply(_parse_price_to_float)
-    df_filtered = df_filtered.dropna(subset=["Giá số"])
-
-    return df_filtered
-
-
-def extract_price_data(
-    excel_handler,
-    province: str,
-    industrial_type: str
-):
-    df = excel_handler.df.copy()
-
-    df["Loại_norm"] = (
-        df["Loại"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
-
-    if industrial_type == "Cụm công nghiệp":
-        type_mask = df["Loại_norm"].str.contains(r"cụm|ccn", regex=True)
-    elif industrial_type == "Khu công nghiệp":
-        type_mask = df["Loại_norm"].str.contains(r"khu|kcn", regex=True)
-    else:
-        return df.iloc[0:0]
-
-    df_filtered = df[
-        (df["Tỉnh/Thành phố"].astype(str).str.lower().str.strip() == province.lower())
-        & type_mask
-    ][["Tên", "Giá thuê đất"]].copy()
-
-    # ✅ chuẩn hóa giá thành số để lọc/sort
-    df_filtered["Giá số"] = df_filtered["Giá thuê đất"].apply(_parse_price_to_float)
-    df_filtered = df_filtered.dropna(subset=["Giá số"])
-
-    return df_filtered
-
-
-# ==================================================
-# 2️⃣ AREA DATA
-# ==================================================
-def extract_area_data(
-    excel_handler,
-    province: str,
-    industrial_type: str
-):
+def clean_numeric_data(df: pd.DataFrame, is_price_metric: bool = True) -> pd.DataFrame:
     """
-    Trích xuất dữ liệu tổng diện tích (float)
+    Nhận vào DataFrame đã lọc, thực hiện tạo cột số liệu chuẩn để vẽ.
+    - is_price_metric=True: Xử lý cột 'Giá thuê đất'
+    - is_price_metric=False: Xử lý cột 'Tổng diện tích'
     """
-    df = excel_handler.df.copy()
-
-    df["Loại_norm"] = (
-        df["Loại"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
-
-    if industrial_type == "Cụm công nghiệp":
-        type_mask = df["Loại_norm"].str.contains(r"cụm|ccn", regex=True)
-    elif industrial_type == "Khu công nghiệp":
-        type_mask = df["Loại_norm"].str.contains(r"khu|kcn", regex=True)
+    df_out = df.copy()
+    
+    if is_price_metric:
+        # Tạo cột 'Giá số'
+        if "Giá thuê đất" not in df_out.columns:
+            return pd.DataFrame() # Trả về rỗng nếu không có cột
+        
+        df_out["Giá số"] = df_out["Giá thuê đất"].apply(_parse_price_to_float)
+        # Chỉ giữ lại dòng có giá trị số hợp lệ
+        df_out = df_out.dropna(subset=["Giá số"])
+        # Loại bỏ giá trị 0 hoặc âm nếu có
+        df_out = df_out[df_out["Giá số"] > 0]
+        
     else:
-        return df.iloc[0:0]
+        # Tạo cột 'Diện tích số'
+        if "Tổng diện tích" not in df_out.columns:
+            return pd.DataFrame()
+            
+        df_out["Diện tích số"] = df_out["Tổng diện tích"].apply(_parse_area_to_float)
+        df_out = df_out.dropna(subset=["Diện tích số"])
+        df_out = df_out[df_out["Diện tích số"] > 0]
 
-    df_filtered = df[
-        (df["Tỉnh/Thành phố"].astype(str).str.lower().str.strip() == province.lower())
-        & type_mask
-    ][["Tên", "Tổng diện tích"]].copy()
-
-    # ✅ chuẩn hóa diện tích thành float
-    df_filtered["Tổng diện tích"] = df_filtered["Tổng diện tích"].apply(_parse_area_to_float)
-    df_filtered = df_filtered.dropna(subset=["Tổng diện tích"])
-
-    return df_filtered
+    return df_out

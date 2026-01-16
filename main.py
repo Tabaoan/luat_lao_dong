@@ -90,7 +90,7 @@ except Exception as e:
 class Question(BaseModel):
     question: str
     phone: Optional[str] = None
-    session_id: Optional[str] = None  # ✅ thêm để giữ lịch sử như main_local
+    session_id: Optional[str] = None  
     name: Optional[str] = None
     url: Optional[str] = None
 
@@ -242,7 +242,7 @@ async def predict(data: Question, request: Request):
         if is_excel_visualize_intent(question):
             if not CHATBOT_AVAILABLE:
                 return {
-                    "answer": "Backend chưa sẵn sàng (không import được app.py).",
+                    "answer": "Backend chưa sẵn sàng ",
                     "requires_contact": False,
                     "session_id": session
                 }
@@ -250,7 +250,7 @@ async def predict(data: Question, request: Request):
             excel_result = await run_in_threadpool(
                 handle_excel_visualize,
                 message=question,
-                excel_handler=app.excel_handler
+                #excel_handler=app.excel_handler
             )
             return {
                 "answer": "Đây là biểu đồ do Chatiip tạo cho bạn: ",
