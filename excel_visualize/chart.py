@@ -13,8 +13,8 @@ plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans', 's
 
 # Đường dẫn đến thư mục chứa ảnh thương hiệu (Cần đảm bảo folder 'assets' tồn tại ở root)
 ASSETS_DIR = "assets"
-LOGO_PATH = os.path.join(ASSETS_DIR, r"./assets/company_logos.png") # Bạn có thể đổi tên file nếu cần
-QR_PATH = os.path.join(ASSETS_DIR, r"./assets/chatiip.png")
+LOGO_PATH = os.path.join(ASSETS_DIR, r"assets/company_logos.png") # Bạn có thể đổi tên file nếu cần
+QR_PATH = os.path.join(ASSETS_DIR, r"assets/chatiip.png")
 # ============================================
 
 
