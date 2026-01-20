@@ -12,7 +12,7 @@ plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans', 's
 # CẤU HÌNH ĐƯỜNG DẪN TUYỆT ĐỐI
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = os.path.join(CURRENT_DIR, "assets", "company_logos.png")
-QR_PATH = os.path.join(CURRENT_DIR, "assets", "chatiip.png")
+QR_PATH = os.path.join(CURRENT_DIR, "assets", "qr_code.png")
 # ============================================
 
 def _clean_name_for_label(name: str) -> str:
