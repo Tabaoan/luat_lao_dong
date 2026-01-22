@@ -49,8 +49,8 @@ FLOWCHART_SYS = (
     "QUY TẮC BẮT BUỘC:\n"
     "- Chỉ trả về DUY NHẤT code Mermaid, không giải thích, không markdown fence.\n"
     "- Bắt đầu bằng: flowchart TD hoặc flowchart LR.\n"
-    "- Node ngắn gọn, rõ ràng; dùng A[...], B{...}, C(...).\n"
-    "- BẮT BUỘC phải có ít nhất 1 node điều kiện dạng { ... }.\n"
+    "- Node chi tiết, rõ ràng; dùng A[...], B{...}, C(...).\n"
+    "- BẮT BUỘC phải có node điều kiện dạng { ... }.\n"
     "- Nếu thiếu thông tin, tự giả định hợp lý để hoàn chỉnh sơ đồ.\n"
 )
 
