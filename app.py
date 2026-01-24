@@ -60,17 +60,13 @@ EMBEDDING_DIM = 3072
 llm = ChatOpenAI(
     api_key=OPENAI__API_KEY,
     model_name=OPENAI__MODEL_NAME,
-    temperature=float(OPENAI__TEMPERATURE) if OPENAI__TEMPERATURE else 0,
-    max_tokens=4000,  # Tăng token limit để tránh bị cắt response
-    streaming=False   # Tắt streaming để đảm bảo response đầy đủ
+    temperature=float(OPENAI__TEMPERATURE) if OPENAI__TEMPERATURE else 0
 )
 
 lang_llm = ChatOpenAI(
     api_key=LANG_MODEL_API_KEY,
     model_name="gpt-4o-mini",
-    temperature=0,
-    max_tokens=4000,  # Tăng token limit
-    streaming=False   # Tắt streaming
+    temperature=0
 )
 
 # ===================== INIT EMBEDDING =====================
