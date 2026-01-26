@@ -1,15 +1,28 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-8" />
   <title>Mapbox Satellite – IZ/CIZ Việt Nam</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet"/>
-  <link href="./vendor/mapbox-gl-geocoder.css" rel="stylesheet"/>
-  <link href="./vendor/mapbox-gl-draw.css" rel="stylesheet"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" />
+  <link href="./vendor/mapbox-gl-geocoder.css" rel="stylesheet" />
+  <link href="./vendor/mapbox-gl-draw.css" rel="stylesheet" />
   <style>
-    html, body { height: 100%; margin: 0; font-family: 'Segoe UI', sans-serif; }
-    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    #map {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+    }
+
     .top-panel {
       position: absolute;
       top: 10px;
@@ -20,15 +33,20 @@
       gap: 8px;
       width: 320px;
     }
+
     .info-card {
-      background: rgba(0,0,0,0.65);
+      background: rgba(0, 0, 0, 0.65);
       color: #fff;
       padding: 10px 12px;
       border-radius: 6px;
       font-size: 13px;
       line-height: 1.4;
     }
-    #coords { font-weight: 600; }
+
+    #coords {
+      font-weight: 600;
+    }
+
     button.export-btn,
     button.toggle-btn {
       border: none;
@@ -39,10 +57,12 @@
       background: #0f62fe;
       color: #fff;
     }
+
     button.toggle-btn {
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.8);
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.8);
     }
+
     .layer-pill {
       background: rgba(15, 98, 254, 0.15);
       color: #0f62fe;
@@ -52,7 +72,8 @@
       font-weight: 600;
       align-self: flex-start;
     }
-        /* CHATBOX GÓC PHẢI */
+
+    /* CHATBOX GÓC PHẢI */
     .floating-chatbox {
       position: absolute;
       bottom: 15px;
@@ -62,7 +83,7 @@
       background: #ffffffee;
       backdrop-filter: blur(6px);
       border-radius: 12px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.25);
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.25);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -74,6 +95,7 @@
     .floating-chatbox.collapsed {
       height: 46px !important;
     }
+
     .floating-chatbox.collapsed .chatbox-messages,
     .floating-chatbox.collapsed .chatbox-input {
       display: none;
@@ -104,7 +126,7 @@
 
     .chatbox-toggle-btn {
       border: none;
-      background: rgba(255,255,255,0.2);
+      background: rgba(255, 255, 255, 0.2);
       color: #fff;
       border-radius: 999px;
       width: 24px;
@@ -127,6 +149,7 @@
       text-align: right;
       margin: 6px 0;
     }
+
     .msg-user span {
       background: #0f62fe;
       color: white;
@@ -139,6 +162,7 @@
       text-align: left;
       margin: 6px 0;
     }
+
     .msg-bot span {
       background: #e7e7e7;
       padding: 6px 10px;
@@ -169,17 +193,20 @@
       font-weight: bold;
       cursor: pointer;
     }
-    .msg-bot span, .msg-user span {
-        max-width: 260px;
-        word-wrap: break-word;
-        white-space: normal;
-        display: inline-block;
-      }
+
+    .msg-bot span,
+    .msg-user span {
+      max-width: 260px;
+      word-wrap: break-word;
+      white-space: normal;
+      display: inline-block;
+    }
   </style>
 </head>
+
 <body>
   <div id="map"></div>
-    <!-- CHATBOX PHẢI DƯỚI — nằm riêng, KHÔNG được đặt trong .top-panel -->
+  <!-- CHATBOX PHẢI DƯỚI — nằm riêng, KHÔNG được đặt trong .top-panel -->
   <div class="floating-chatbox" id="chatbox">
 
     <div class="chatbox-header">
@@ -673,22 +700,22 @@
     }
 
 
-        function extendBounds(bounds, geometry) {
-          if (!geometry) return;
-          if (geometry.type === 'Point') {
-            bounds.extend(geometry.coordinates);
-            return;
-          }
-          if (geometry.type === 'Polygon') {
-            geometry.coordinates?.forEach((ring) => ring.forEach((coord) => bounds.extend(coord)));
-            return;
-          }
-          if (geometry.type === 'MultiPolygon') {
-            geometry.coordinates?.forEach((polygon) => {
-              polygon.forEach((ring) => ring.forEach((coord) => bounds.extend(coord)));
-            });
-          }
-        }
+    function extendBounds(bounds, geometry) {
+      if (!geometry) return;
+      if (geometry.type === 'Point') {
+        bounds.extend(geometry.coordinates);
+        return;
+      }
+      if (geometry.type === 'Polygon') {
+        geometry.coordinates?.forEach((ring) => ring.forEach((coord) => bounds.extend(coord)));
+        return;
+      }
+      if (geometry.type === 'MultiPolygon') {
+        geometry.coordinates?.forEach((polygon) => {
+          polygon.forEach((ring) => ring.forEach((coord) => bounds.extend(coord)));
+        });
+      }
+    }
 
     function normalizeText(text) {
       return (text || '')
@@ -827,149 +854,177 @@
     }
 
     // Cấu hình API
-const CHATBOT_API  = 'http://localhost:5000/chatbot';
-const MAP_INTENT_API = 'http://localhost:5000/map_intent';
-const MAP_INTENT_POLL = 'http://localhost:5000/map_intent_poll';
-/****************************************************************
- * ZOOM TỈNH THEO TÊN (DÙNG vn_provinces.geojson)
- ****************************************************************/
-function normalizeName(str) {
-  return String(str || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toLowerCase();
-}
+    const CHATBOT_API = 'http://localhost:10000/chatbot';
+    const MAP_INTENT_API = 'http://localhost:10000/map_intent';
+    const MAP_INTENT_POLL = 'http://localhost:10000/map_intent_poll';
 
-function zoomProvinceByName(name) {
-  if (!provinceGeojson) {
-    console.warn("Province data not loaded yet");
-    return;
-  }
+    // Cache busting
+    console.log("🔄 Interactive Map loaded at:", new Date().toISOString());
+    /****************************************************************
+     * ZOOM TỈNH THEO TÊN (DÙNG vn_provinces.geojson)
+     ****************************************************************/
+    function normalizeName(str) {
+      return String(str || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .toLowerCase();
+    }
 
-  const target = normalizeName(name);
+    function zoomProvinceByName(name) {
+      if (!provinceGeojson) {
+        console.warn("Province data not loaded yet");
+        return;
+      }
 
-  // TÌM TỈNH TRONG GEOJSON
-  const feature = provinceGeojson.features.find(f => {
-    const n = normalizeName(f.properties?.name || "");
-    return n === target;
-  });
+      const target = normalizeName(name);
+      console.log("🔍 Looking for province:", name, "→ normalized:", target);
 
-  if (!feature) {
-    console.warn("Không tìm thấy tỉnh:", name);
-    return;
-  }
+      // TÌM TỈNH TRONG GEOJSON với logic matching linh hoạt
+      const feature = provinceGeojson.features.find(f => {
+        const provinceName = f.properties?.name || "";
+        const normalized = normalizeName(provinceName);
 
-  console.log("🎯 Highlight province:", feature.properties.name);
+        // Thử exact match trước
+        if (normalized === target) {
+          return true;
+        }
 
-  // -------------------------------------
-  // 1️⃣ TÔ ĐẬM RANH GIỚI TỈNH
-  // -------------------------------------
-  map.setFilter("vn-province-highlight", [
-    "==",
-    "name",
-    feature.properties.name
-  ]);
+        // Thử partial match (contains)
+        if (target && normalized && (target.includes(normalized) || normalized.includes(target))) {
+          return true;
+        }
 
-  map.setPaintProperty("vn-province-highlight", "line-opacity", 1);
+        return false;
+      });
 
-  // -------------------------------------
-  // 2️⃣ ZOOM VÀO TỈNH
-  // -------------------------------------
-  const bounds = new mapboxgl.LngLatBounds();
-  const geom = feature.geometry;
+      if (!feature) {
+        console.warn("❌ Không tìm thấy tỉnh:", name, "- Đã thử normalize:", target);
 
-  if (geom.type === "Polygon") {
-    geom.coordinates[0].forEach(c => bounds.extend(c));
-  } else if (geom.type === "MultiPolygon") {
-    geom.coordinates.forEach(poly =>
-      poly[0].forEach(c => bounds.extend(c))
-    );
-  }
+        // Debug: In ra tất cả tên tỉnh có sẵn
+        console.log("📋 Available provinces:",
+          provinceGeojson.features.map(f => f.properties?.name).slice(0, 10)
+        );
+        return;
+      }
 
-  map.fitBounds(bounds, { padding: 60, duration: 1200 });
-}
+      console.log("✅ Found province:", feature.properties.name, "for query:", name);
 
-const cbMessages = document.getElementById("cb-messages");
-const cbInput = document.getElementById("cb-input");
-const cbSend = document.getElementById("cb-send");
-const cbToggle = document.getElementById("cb-toggle");
-const chatboxEl = document.getElementById("chatbox");
-const cbFullscreen = document.getElementById("cb-fullscreen");
+      // -------------------------------------
+      // 1️⃣ TÔ ĐẬM RANH GIỚI TỈNH
+      // -------------------------------------
+      map.setFilter("vn-province-highlight", [
+        "==",
+        "name",
+        feature.properties.name
+      ]);
 
-// Toggle fullscreen
-cbFullscreen.onclick = () => {
-  chatboxEl.classList.toggle("fullscreen");
+      map.setPaintProperty("vn-province-highlight", "line-opacity", 1);
 
-  // đổi icon
-  cbFullscreen.textContent =
-    chatboxEl.classList.contains("fullscreen") ? "🗗" : "⛶";
+      // -------------------------------------
+      // 2️⃣ ZOOM VÀO TỈNH
+      // -------------------------------------
+      const bounds = new mapboxgl.LngLatBounds();
+      const geom = feature.geometry;
 
-  // nếu đang fullscreen thì không được collapsed
-  if (chatboxEl.classList.contains("fullscreen")) {
-    chatboxEl.classList.remove("collapsed");
-    cbToggle.textContent = "−";
-  }
-};
-function addUserMessage(msg) {
-  cbMessages.innerHTML += `<div class="msg-user"><span>${escapeHtml(msg)}</span></div>`;
-  cbMessages.scrollTop = cbMessages.scrollHeight;
-}
+      if (geom.type === "Polygon") {
+        geom.coordinates[0].forEach(c => bounds.extend(c));
+      } else if (geom.type === "MultiPolygon") {
+        geom.coordinates.forEach(poly =>
+          poly[0].forEach(c => bounds.extend(c))
+        );
+      }
 
-function addBotMessageText(msg) {
-  cbMessages.innerHTML += `<div class="msg-bot"><span>${escapeHtml(msg)}</span></div>`;
-  cbMessages.scrollTop = cbMessages.scrollHeight;
-}
+      // Zoom với padding và duration phù hợp
+      map.fitBounds(bounds, {
+        padding: 80,
+        duration: 1500,
+        maxZoom: 12  // Giới hạn zoom level để không zoom quá gần
+      });
 
-function addBotMessageHtml(html) {
-  cbMessages.innerHTML += `<div class="msg-bot"><span>${html}</span></div>`;
-  cbMessages.scrollTop = cbMessages.scrollHeight;
-}
+      console.log("🎯 Zoomed to province:", feature.properties.name);
+    }
 
-cbSend.onclick = sendChatboxMessage;
-cbInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") sendChatboxMessage();
-});
+    const cbMessages = document.getElementById("cb-messages");
+    const cbInput = document.getElementById("cb-input");
+    const cbSend = document.getElementById("cb-send");
+    const cbToggle = document.getElementById("cb-toggle");
+    const chatboxEl = document.getElementById("chatbox");
+    const cbFullscreen = document.getElementById("cb-fullscreen");
 
-cbToggle.onclick = () => {
-  chatboxEl.classList.toggle("collapsed");
-  cbToggle.textContent = chatboxEl.classList.contains("collapsed") ? "+" : "−";
-};
-/****************************************************************
- * PARSE PROVINCE JSON (tránh lỗi undefined)
- ****************************************************************/
-function tryParseProvinceJson(answer) {
-  if (!answer) return null;
+    // Toggle fullscreen
+    cbFullscreen.onclick = () => {
+      chatboxEl.classList.toggle("fullscreen");
 
-  // Nếu backend trả string
-  if (typeof answer === "string") {
-    const s = answer.trim();
-    if (!s.startsWith("{")) return null;
-    try {
-      const obj = JSON.parse(s);
-      if (obj.province && Array.isArray(obj.data)) return obj;
-    } catch {
+      // đổi icon
+      cbFullscreen.textContent =
+        chatboxEl.classList.contains("fullscreen") ? "🗗" : "⛶";
+
+      // nếu đang fullscreen thì không được collapsed
+      if (chatboxEl.classList.contains("fullscreen")) {
+        chatboxEl.classList.remove("collapsed");
+        cbToggle.textContent = "−";
+      }
+    };
+    function addUserMessage(msg) {
+      cbMessages.innerHTML += `<div class="msg-user"><span>${escapeHtml(msg)}</span></div>`;
+      cbMessages.scrollTop = cbMessages.scrollHeight;
+    }
+
+    function addBotMessageText(msg) {
+      cbMessages.innerHTML += `<div class="msg-bot"><span>${escapeHtml(msg)}</span></div>`;
+      cbMessages.scrollTop = cbMessages.scrollHeight;
+    }
+
+    function addBotMessageHtml(html) {
+      cbMessages.innerHTML += `<div class="msg-bot"><span>${html}</span></div>`;
+      cbMessages.scrollTop = cbMessages.scrollHeight;
+    }
+
+    cbSend.onclick = sendChatboxMessage;
+    cbInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") sendChatboxMessage();
+    });
+
+    cbToggle.onclick = () => {
+      chatboxEl.classList.toggle("collapsed");
+      cbToggle.textContent = chatboxEl.classList.contains("collapsed") ? "+" : "−";
+    };
+    /****************************************************************
+     * PARSE PROVINCE JSON (tránh lỗi undefined)
+     ****************************************************************/
+    function tryParseProvinceJson(answer) {
+      if (!answer) return null;
+
+      // Nếu backend trả string
+      if (typeof answer === "string") {
+        const s = answer.trim();
+        if (!s.startsWith("{")) return null;
+        try {
+          const obj = JSON.parse(s);
+          if (obj.province && Array.isArray(obj.data)) return obj;
+        } catch {
+          return null;
+        }
+      }
+
+      // Nếu backend trả object
+      if (typeof answer === "object" && answer.province && Array.isArray(answer.data)) {
+        return answer;
+      }
+
       return null;
     }
-  }
 
-  // Nếu backend trả object
-  if (typeof answer === "object" && answer.province && Array.isArray(answer.data)) {
-    return answer;
-  }
+    /****************************************************************
+     * RENDER TABLE CHO PROVINCE RESPONSE (tùy chọn)
+     ****************************************************************/
+    function renderProvinceTable(obj) {
+      const province = obj.province || "";
+      const zones = obj.data || [];
+      const count = obj.count || zones.length;
 
-  return null;
-}
-
-/****************************************************************
- * RENDER TABLE CHO PROVINCE RESPONSE (tùy chọn)
- ****************************************************************/
-function renderProvinceTable(obj) {
-  const province = obj.province || "";
-  const zones = obj.data || [];
-  const count = obj.count || zones.length;
-
-  let rows = zones.map((z, i) => `
+      let rows = zones.map((z, i) => `
     <tr>
       <td>${i + 1}</td>
       <td>${escapeHtml(z["Tên"] || "")}</td>
@@ -982,7 +1037,7 @@ function renderProvinceTable(obj) {
     </tr>
   `).join("");
 
-  return `
+      return `
     <div class="response-title">
       ${obj.message || `Danh sách KCN/CCN tại ${province}`}
     </div>
@@ -1007,201 +1062,275 @@ function renderProvinceTable(obj) {
       </tbody>
     </table>
   `;
-}
+    }
 
-/****************************************************************
- * HÀM HIỂN THỊ TẤT CẢ KCN/CCN TRONG TỈNH
- ****************************************************************/
-function showProvinceIndustrialZones(list) {
-  if (!Array.isArray(list)) return;
+    /****************************************************************
+     * HÀM HIỂN THỊ TẤT CẢ KCN/CCN TRONG TỈNH
+     ****************************************************************/
+    function showProvinceIndustrialZones(list) {
+      if (!Array.isArray(list)) return;
 
-  // XÓA TOÀN BỘ POPUP CŨ
-  ACTIVE_POPUPS.forEach(p => p.remove());
-  ACTIVE_POPUPS = [];
+      // XÓA TOÀN BỘ POPUP CŨ
+      ACTIVE_POPUPS.forEach(p => p.remove());
+      ACTIVE_POPUPS = [];
 
-  // TẠO POPUP MỚI
-  list.forEach(item => {
-    const [lng, lat] = item.coordinates;
+      // TẠO POPUP MỚI
+      list.forEach(item => {
+        const [lng, lat] = item.coordinates;
 
-    const popup = new mapboxgl.Popup({ closeOnClick: false })
-      .setLngLat([lng, lat])
-      .setHTML(`
+        const popup = new mapboxgl.Popup({ closeOnClick: false })
+          .setLngLat([lng, lat])
+          .setHTML(`
         <strong>${item.name}</strong><br>
         <em>${item.kind}</em><br>
         ${item.address}
       `)
-      .addTo(map);
+          .addTo(map);
 
-    ACTIVE_POPUPS.push(popup);
-  });
-}
-
-async function sendChatboxMessage() {
-  const q = cbInput.value.trim();
-  if (!q) return;
-
-  addUserMessage(q);
-  cbInput.value = "";
-  addBotMessageText("Đang xử lý...");
-
-  try {
-    const res = await fetch(CHATBOT_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q })
-    });
-
-    if (!res.ok) {
-      throw new Error(`Server trả về lỗi: ${res.status}`);
-    }
-
-    const data = await res.json();
-    const intent = data.map_intent || null;
-
-    // Xóa dòng "Đang xử lý..."
-    const msgs = cbMessages.querySelectorAll(".msg-bot");
-    if (msgs.length > 0) msgs[msgs.length - 1].remove();
-
-    // =======================
-    // 1️⃣ HIỂN THỊ NỘI DUNG TRẢ LỜI
-    // =======================
-    const answer = data.answer;
-    const parsed = tryParseProvinceJson(answer);
-
-    if (parsed) {
-      addBotMessageHtml(renderProvinceTable(parsed));
-    } else {
-      addBotMessageText(
-        typeof answer === "string" ? answer : JSON.stringify(answer)
-      );
-    }
-
-    // =======================
-    // 2️⃣ ZOOM MAP NGAY LẬP TỨC TỪ map_intent
-    // =======================
-    if (intent) {
-
-      // =========================
-      // 🟦 ZOOM TỚI KHU / CỤM CN
-      // =========================
-      if (intent.type === "zone" && Array.isArray(intent.coordinates)) {
-
-        ACTIVE_POPUPS.forEach(p => p.remove());
-        ACTIVE_POPUPS = [];
-
-        const [lng, lat] = intent.coordinates;
-        console.log("🎯 ZOOM ZONE:", intent.zone_name, lng, lat);
-
-        map.flyTo({
-          center: [lng, lat],
-          zoom: 15.5,
-          speed: 1
-        });
-      }
-
-      // =========================
-      // 🟩 ZOOM TỈNH + SHOW LIST
-      // =========================
-      else if (intent.type === "province" && intent.province) {
-
-        ACTIVE_POPUPS.forEach(p => p.remove());
-        ACTIVE_POPUPS = [];
-
-        console.log("🎯 ZOOM PROVINCE:", intent.province);
-
-        zoomProvinceByName(intent.province);
-
-        if (intent.iz_list) {
-          setTimeout(() => {
-            showProvinceIndustrialZones(intent.iz_list);
-          }, 1200);
-        }
-      }
-    }
-
-  } catch (err) {
-    // Xoá dòng đang xử lý
-    const msgs = cbMessages.querySelectorAll(".msg-bot");
-    if (msgs.length > 0) msgs[msgs.length - 1].remove();
-
-    addBotMessageText(
-      `⚠️ Lỗi: ${err.message}. Kiểm tra server có đang chạy tại ${CHATBOT_API}?`
-    );
-    console.error("Chatbox error:", err);
-  }
-}
-
-/****************************************************************
- * POLL MAP_INTENT
- ****************************************************************/
-async function pollIntent() {
-  try {
-    const resp = await fetch(MAP_INTENT_POLL);
-    const intent = await resp.json();
-
-    console.log("📡 POLL INTENT:", intent);
-
-    // Không có intent mới → thoát
-    if (!intent || intent.status === "empty") return;
-
-    // =============================
-    // 🔥 1) ƯU TIÊN ZOOM KHU / CỤM CN
-    // =============================
-    if (intent.type === "zone" && Array.isArray(intent.coordinates)) {
-      const [lng, lat] = intent.coordinates;
-
-      console.log("🎯 [INTENT] ZOOM ZONE →", intent.zone_name, lng, lat);
-
-      // XÓA POPUP TỈNH CŨ (nếu có)
-      if (window.ACTIVE_POPUPS) {
-        window.ACTIVE_POPUPS.forEach(p => p.remove());
-        window.ACTIVE_POPUPS = [];
-      }
-
-      // Zoom đến vị trí KCN / CCN
-      map.flyTo({
-        center: [lng, lat],
-        zoom: 15.5,
-        speed: 0.9,
-        essential: true
+        ACTIVE_POPUPS.push(popup);
       });
-
-      return; // Zone override province
     }
 
-    // =============================
-    // 📍 2) ZOOM TỈNH (PROVINCE)
-    // =============================
-    if (intent.type === "province" && intent.province) {
-      console.log("🎯 [INTENT] ZOOM PROVINCE →", intent.province);
+    async function sendChatboxMessage() {
+      const q = cbInput.value.trim();
+      if (!q) return;
 
-      zoomProvinceByName(intent.province);
+      addUserMessage(q);
+      cbInput.value = "";
+      addBotMessageText("Đang xử lý...");
 
-      return;
+      try {
+        const res = await fetch(CHATBOT_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: q })
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server trả về lỗi: ${res.status}`);
+        }
+
+        const data = await res.json();
+        const intent = data.map_intent || null;
+
+        console.log("🔍 CHATBOT RESPONSE:", data);
+        console.log("🎯 MAP INTENT:", intent);
+
+        // Xóa dòng "Đang xử lý..."
+        const msgs = cbMessages.querySelectorAll(".msg-bot");
+        if (msgs.length > 0) msgs[msgs.length - 1].remove();
+
+        // =======================
+        // 1️⃣ HIỂN THỊ NỘI DUNG TRẢ LỜI
+        // =======================
+        const answer = data.answer;
+        const parsed = tryParseProvinceJson(answer);
+
+        if (parsed) {
+          addBotMessageHtml(renderProvinceTable(parsed));
+        } else {
+          addBotMessageText(
+            typeof answer === "string" ? answer : JSON.stringify(answer)
+          );
+        }
+
+        // =======================
+        // 2️⃣ ZOOM MAP NGAY LẬP TỨC TỪ map_intent
+        // =======================
+        if (intent) {
+
+          // =========================
+          // 🟦 ZOOM TỚI KHU / CỤM CN
+          // =========================
+          if (intent.type === "zone" && Array.isArray(intent.coordinates)) {
+
+            ACTIVE_POPUPS.forEach(p => p.remove());
+            ACTIVE_POPUPS = [];
+
+            const [lng, lat] = intent.coordinates;
+            console.log("🎯 ZOOM ZONE:", intent.zone_name, lng, lat);
+
+            map.flyTo({
+              center: [lng, lat],
+              zoom: 15.5,
+              speed: 1
+            });
+          }
+
+          // =========================
+          // 🟩 ZOOM TỈNH + SHOW LIST
+          // =========================
+          else if (intent.type === "province" && intent.province) {
+
+            ACTIVE_POPUPS.forEach(p => p.remove());
+            ACTIVE_POPUPS = [];
+
+            console.log("🎯 ZOOM PROVINCE:", intent.province);
+
+            // 🎯 SỬ DỤNG PROVINCE_ZOOM TỪ BACKEND NẾU CÓ
+            if (intent.province_zoom && intent.province_zoom.bounds) {
+              const bounds = intent.province_zoom.bounds;
+              const [minLng, minLat, maxLng, maxLat] = bounds;
+
+              console.log("🎯 Using backend province_zoom:", intent.province_zoom);
+              console.log("🎯 Bounds:", bounds);
+              console.log("🎯 Zoom level:", intent.province_zoom.zoom_level);
+
+              // Highlight province border
+              if (provinceGeojson) {
+                const feature = provinceGeojson.features.find(f => {
+                  const provinceName = f.properties?.name || "";
+                  const normalized1 = normalizeName(provinceName);
+                  const normalized2 = normalizeName(intent.province);
+                  return normalized1.includes(normalized2) || normalized2.includes(normalized1);
+                });
+
+                if (feature) {
+                  map.setFilter("vn-province-highlight", ["==", "name", feature.properties.name]);
+                  map.setPaintProperty("vn-province-highlight", "line-opacity", 1);
+                }
+              }
+
+              // Zoom using backend bounds
+              map.fitBounds([
+                [minLng, minLat],
+                [maxLng, maxLat]
+              ], {
+                padding: 80,
+                duration: 1500,
+                maxZoom: intent.province_zoom.zoom_level || 12
+              });
+            } else {
+              // Fallback to old method
+              zoomProvinceByName(intent.province);
+            }
+
+            if (intent.iz_list) {
+              setTimeout(() => {
+                showProvinceIndustrialZones(intent.iz_list);
+              }, 1200);
+            }
+          }
+        }
+
+      } catch (err) {
+        // Xoá dòng đang xử lý
+        const msgs = cbMessages.querySelectorAll(".msg-bot");
+        if (msgs.length > 0) msgs[msgs.length - 1].remove();
+
+        addBotMessageText(
+          `⚠️ Lỗi: ${err.message}. Kiểm tra server có đang chạy tại ${CHATBOT_API}?`
+        );
+        console.error("Chatbox error:", err);
+      }
     }
 
-    // =============================
-    // ❓ 3) TYPES KHÁC (Dự phòng)
-    // =============================
-    console.warn("⚠️ Intent type chưa hỗ trợ:", intent);
+    /****************************************************************
+     * POLL MAP_INTENT
+     ****************************************************************/
+    async function pollIntent() {
+      try {
+        const resp = await fetch(MAP_INTENT_POLL);
+        const intent = await resp.json();
 
-  } catch (err) {
-    console.warn("❌ Polling Error:", err);
-  }
-}
+        console.log("📡 POLL INTENT:", intent);
 
-/****************************************************************
- * ESCAPE HTML
- ****************************************************************/
-function escapeHtml(str) {
-  return String(str == null ? "" : str).replace(/[&<>"']/g, s => ({
-    '&':'&amp;',
-    '<':'&lt;',
-    '>':'&gt;',
-    '"':'&quot;',
-    "'":'&#39;'
-  }[s]));
-}
+        // Không có intent mới → thoát
+        if (!intent || intent.status === "empty") return;
+
+        // =============================
+        // 🔥 1) ƯU TIÊN ZOOM KHU / CỤM CN
+        // =============================
+        if (intent.type === "zone" && Array.isArray(intent.coordinates)) {
+          const [lng, lat] = intent.coordinates;
+
+          console.log("🎯 [INTENT] ZOOM ZONE →", intent.zone_name, lng, lat);
+
+          // XÓA POPUP TỈNH CŨ (nếu có)
+          if (window.ACTIVE_POPUPS) {
+            window.ACTIVE_POPUPS.forEach(p => p.remove());
+            window.ACTIVE_POPUPS = [];
+          }
+
+          // Zoom đến vị trí KCN / CCN
+          map.flyTo({
+            center: [lng, lat],
+            zoom: 15.5,
+            speed: 0.9,
+            essential: true
+          });
+
+          return; // Zone override province
+        }
+
+        // =============================
+        // 📍 2) ZOOM TỈNH (PROVINCE)
+        // =============================
+        if (intent.type === "province" && intent.province) {
+          console.log("🎯 [INTENT] ZOOM PROVINCE →", intent.province);
+
+          // 🎯 SỬ DỤNG PROVINCE_ZOOM TỪ BACKEND NẾU CÓ
+          if (intent.province_zoom && intent.province_zoom.bounds) {
+            const bounds = intent.province_zoom.bounds;
+            const [minLng, minLat, maxLng, maxLat] = bounds;
+
+            console.log("🎯 [POLL] Using backend province_zoom:", intent.province_zoom);
+
+            // Highlight province border
+            if (provinceGeojson) {
+              const feature = provinceGeojson.features.find(f => {
+                const provinceName = f.properties?.name || "";
+                const normalized1 = normalizeName(provinceName);
+                const normalized2 = normalizeName(intent.province);
+                return normalized1.includes(normalized2) || normalized2.includes(normalized1);
+              });
+
+              if (feature) {
+                map.setFilter("vn-province-highlight", ["==", "name", feature.properties.name]);
+                map.setPaintProperty("vn-province-highlight", "line-opacity", 1);
+              }
+            }
+
+            // Zoom using backend bounds
+            map.fitBounds([
+              [minLng, minLat],
+              [maxLng, maxLat]
+            ], {
+              padding: 80,
+              duration: 1500,
+              maxZoom: intent.province_zoom.zoom_level || 12
+            });
+          } else {
+            // Fallback to old method
+            zoomProvinceByName(intent.province);
+          }
+
+          return;
+        }
+
+        // =============================
+        // ❓ 3) TYPES KHÁC (Dự phòng)
+        // =============================
+        console.warn("⚠️ Intent type chưa hỗ trợ:", intent);
+
+      } catch (err) {
+        console.warn("❌ Polling Error:", err);
+      }
+    }
+
+    /****************************************************************
+     * ESCAPE HTML
+     ****************************************************************/
+    function escapeHtml(str) {
+      return String(str == null ? "" : str).replace(/[&<>"']/g, s => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[s]));
+    }
   </script>
 </body>
+
 </html>

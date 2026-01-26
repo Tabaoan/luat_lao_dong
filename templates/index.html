@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatIIP - Trợ lý AI thông minh</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <span>ChatIIP</span>
+                </div>
+                <div class="header-info">
+                    <span class="status-indicator online"></span>
+                    <span>Trực tuyến</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Chat Container -->
+        <div class="chat-container">
+            <!-- Messages Area -->
+            <div class="messages-area" id="messagesArea">
+                <!-- Welcome Message -->
+                <div class="message bot-message">
+                    <div class="message-avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">
+                            Xin chào! Tôi là ChatIIP - trợ lý AI thông minh. Tôi có thể giúp bạn:
+                            <ul>
+                                <li>🏭 Tìm kiếm thông tin khu công nghiệp, cụm công nghiệp</li>
+                                <li>📊 Tra cứu mã số thuế doanh nghiệp</li>
+                                <li>⚖️ Tư vấn pháp luật lao động</li>
+                                <li>📈 Tạo biểu đồ và flowchart</li>
+                                <li>💬 Trả lời các câu hỏi khác</li>
+                            </ul>
+                            Bạn có câu hỏi gì cho tôi không?
+
+                            <div
+                                style="margin-top: 10px; padding: 10px; background: #e3f2fd; border-radius: 5px; font-size: 12px;">
+                                <strong>🔧 Debug Info:</strong><br>
+                                Leaflet: <span id="leafletStatus">Đang kiểm tra...</span><br>
+                                Console: Mở F12 để xem debug logs
+                            </div>
+                        </div>
+                        <div class="message-time">Vừa xong</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                <div class="message-avatar">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <div class="input-container">
+                    <input type="text" id="messageInput" placeholder="Nhập câu hỏi của bạn..." autocomplete="off">
+                    <button id="sendButton" class="send-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="quick-actions">
+                    <button class="quick-btn" data-message="Danh sách khu công nghiệp ở Hà Nội">
+                        🏭 KCN Hà Nội
+                    </button>
+                    <button class="quick-btn" data-message="Biểu đồ KCN">
+                        📊 Biểu đồ KCN
+                    </button>
+                    <button class="quick-btn" data-message="Bản đồ KCN">
+                        🗺️ Bản đồ KCN
+                    </button>
+                    <button class="quick-btn" data-message="Tra cứu mã số thuế">
+                        🔍 Tra MST
+                    </button>
+                    <button class="quick-btn" data-message="Luật lao động">
+                        ⚖️ Luật lao động
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contact Modal -->
+        <div class="modal" id="contactModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Thông tin liên hệ</h3>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Để được hỗ trợ tốt nhất, vui lòng để lại thông tin liên hệ:</p>
+                    <form id="contactForm">
+                        <div class="form-group">
+                            <label for="contactName">Họ và tên:</label>
+                            <input type="text" id="contactName" name="name" placeholder="Nhập họ tên của bạn">
+                        </div>
+                        <div class="form-group">
+                            <label for="contactPhone">Số điện thoại:</label>
+                            <input type="tel" id="contactPhone" name="phone" placeholder="Nhập số điện thoại" required>
+                        </div>
+                        <input type="hidden" id="originalQuestion" name="original_question">
+                        <div class="form-actions">
+                            <button type="button" class="btn-cancel" id="cancelContact">Hủy</button>
+                            <button type="submit" class="btn-submit">Gửi thông tin</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js?v=20250122"></script>
+    <script>
+        // Debug Leaflet ngay khi trang load
+        document.addEventListener('DOMContentLoaded', function () {
+            const statusSpan = document.getElementById('leafletStatus');
+            if (statusSpan) {
+                if (typeof L !== 'undefined') {
+                    statusSpan.innerHTML = '✅ OK (v' + L.version + ')';
+                    statusSpan.style.color = 'green';
+                } else {
+                    statusSpan.innerHTML = '❌ Không tải được';
+                    statusSpan.style.color = 'red';
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

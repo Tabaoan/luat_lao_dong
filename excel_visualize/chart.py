@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend to fix thread warning
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import io

@@ -1,6 +1,9 @@
 # main.py
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import os
 import uvicorn
@@ -9,6 +12,9 @@ from pathlib import Path
 import json
 import inspect
 import uuid
+from datetime import datetime
+import re
+import unicodedata
 
 from starlette.concurrency import run_in_threadpool
 
@@ -22,6 +28,164 @@ from excel_visualize import (
 )
 
 from excel_query.excel_query import ExcelQueryHandler
+
+# 🎯 IMPORT KCN DETAIL QUERY
+try:
+    from kcn_detail_query import process_kcn_detail_query
+    KCN_DETAIL_AVAILABLE = True
+    print("✅ KCN Detail Query module loaded")
+except ImportError as e:
+    KCN_DETAIL_AVAILABLE = False
+    print(f"⚠️ KCN Detail Query not available: {e}")
+    def process_kcn_detail_query(*args, **kwargs):
+        return None
+
+
+# ===============================
+# Province Zoom Handler - Tích hợp từ province_zoom.py
+# ===============================
+class ProvinceZoomHandler:
+    def __init__(self, geojson_path: str = "map_ui/vn_provinces_34.geojson"):
+        self.geojson_path = geojson_path
+        self.provinces_data = None
+        self.load_provinces_data()
+    
+    def load_provinces_data(self):
+        """Load dữ liệu tỉnh thành từ geojson file"""
+        try:
+            geojson_file = Path(self.geojson_path)
+            if not geojson_file.exists():
+                print(f"⚠️ Không tìm thấy file: {self.geojson_path}")
+                return
+                
+            with open(geojson_file, 'r', encoding='utf-8') as f:
+                self.provinces_data = json.load(f)
+            
+            print(f"✅ Đã load {len(self.provinces_data['features'])} tỉnh thành từ {self.geojson_path}")
+            
+        except Exception as e:
+            print(f"❌ Lỗi load provinces data: {e}")
+            self.provinces_data = None
+    
+    def normalize_name(self, name: str) -> str:
+        """Chuẩn hóa tên tỉnh để so sánh"""
+        if not name:
+            return ""
+        
+        # Loại bỏ dấu tiếng Việt và ký tự đặc biệt
+        normalized = unicodedata.normalize('NFD', str(name))
+        no_accents = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+        
+        # Chỉ giữ lại chữ cái và số, loại bỏ "TP", "Thành phố"
+        clean = re.sub(r'[^a-zA-Z0-9]', '', no_accents)
+        clean = re.sub(r'(tp|thanhpho)', '', clean, flags=re.IGNORECASE)
+        
+        return clean.lower()
+    
+    def find_province_by_name(self, province_name: str) -> Optional[Dict]:
+        """Tìm tỉnh trong geojson data theo tên với logic matching linh hoạt"""
+        if not self.provinces_data:
+            return None
+        
+        target = self.normalize_name(province_name)
+        
+        # Thử exact match trước
+        for feature in self.provinces_data['features']:
+            properties = feature.get('properties', {})
+            name = properties.get('name', '')
+            
+            if self.normalize_name(name) == target:
+                return feature
+        
+        # Thử partial match (contains)
+        for feature in self.provinces_data['features']:
+            properties = feature.get('properties', {})
+            name = properties.get('name', '')
+            normalized_name = self.normalize_name(name)
+            
+            # Kiểm tra 2 chiều: target in name hoặc name in target
+            if target and normalized_name and (target in normalized_name or normalized_name in target):
+                return feature
+        
+        return None
+    
+    def calculate_bounds(self, geometry: Dict) -> Optional[tuple]:
+        """Tính bounds (min_lng, min_lat, max_lng, max_lat) từ geometry"""
+        try:
+            coordinates = []
+            
+            if geometry['type'] == 'Polygon':
+                coordinates = geometry['coordinates'][0]
+            elif geometry['type'] == 'MultiPolygon':
+                for polygon in geometry['coordinates']:
+                    coordinates.extend(polygon[0])
+            else:
+                return None
+            
+            if not coordinates:
+                return None
+            
+            # Tính min/max lng/lat
+            lngs = [coord[0] for coord in coordinates]
+            lats = [coord[1] for coord in coordinates]
+            
+            return (min(lngs), min(lats), max(lngs), max(lats))
+            
+        except Exception as e:
+            print(f"❌ Lỗi tính bounds: {e}")
+            return None
+    
+    def get_province_zoom_bounds(self, province_name: str) -> Optional[Dict]:
+        """Lấy thông tin zoom bounds cho tỉnh"""
+        feature = self.find_province_by_name(province_name)
+        if not feature:
+            return None
+        
+        geometry = feature.get('geometry')
+        if not geometry:
+            return None
+        
+        bounds = self.calculate_bounds(geometry)
+        if not bounds:
+            return None
+        
+        min_lng, min_lat, max_lng, max_lat = bounds
+        
+        # Tính center
+        center_lng = (min_lng + max_lng) / 2
+        center_lat = (min_lat + max_lat) / 2
+        
+        # Tính zoom level dựa trên kích thước bounds
+        lng_diff = max_lng - min_lng
+        lat_diff = max_lat - min_lat
+        max_diff = max(lng_diff, lat_diff)
+        
+        # Zoom level logic - Tăng cao hơn để thấy chi tiết thành phố
+        if max_diff > 2:
+            zoom_level = 11
+        elif max_diff > 1:
+            zoom_level = 12
+        elif max_diff > 0.5:
+            zoom_level = 13
+        elif max_diff > 0.2:
+            zoom_level = 14
+        else:
+            zoom_level = 15
+        
+        return {
+            "province_name": feature['properties']['name'],
+            "bounds": bounds,
+            "center": [center_lng, center_lat],
+            "zoom_level": zoom_level,
+            "geometry": geometry
+        }
+
+# Global instance
+province_zoom_handler = ProvinceZoomHandler()
+
+def get_province_zoom_info(province_name: str) -> Optional[Dict]:
+    """Hàm tiện ích để lấy thông tin zoom province"""
+    return province_zoom_handler.get_province_zoom_bounds(province_name)
 
 
 # ===============================
@@ -121,6 +285,12 @@ app_fastapi.add_middleware(
 )
 
 # ---------------------------------------
+# 🎨 Mount Static Files và Templates
+# ---------------------------------------
+app_fastapi.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# ---------------------------------------
 # 2️⃣ Init ExcelQueryHandler (KCN/CCN)
 # ---------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
@@ -135,10 +305,15 @@ excel_kcn_handler = ExcelQueryHandler(
 
 
 # ---------------------------------------
-# 3️⃣ Route kiểm tra hoạt động (GET /)
+# 3️⃣ Route trang chủ và API status
 # ---------------------------------------
-@app_fastapi.get("/", summary="Kiểm tra trạng thái API")
-async def home():
+@app_fastapi.get("/", response_class=HTMLResponse, summary="Trang chủ ChatIIP UI")
+async def home_ui(request: Request):
+    """Trang chủ với giao diện chatbot đầy đủ"""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app_fastapi.get("/api", summary="API Status - Kiểm tra trạng thái API")
+async def api_status():
     vectordb_status = "Unknown"
     if CHATBOT_AVAILABLE:
         try:
@@ -261,7 +436,32 @@ async def predict(data: Question, request: Request):
             }
 
         # ===============================
-        # 3️⃣ EXCEL KCN/CCN (BẢNG + TỌA ĐỘ) - ƯU TIÊN TRƯỚC LLM
+        # 3️⃣ KCN DETAIL QUERY - ƯU TIÊN CAO
+        # ===============================
+        if KCN_DETAIL_AVAILABLE:
+            llm = app.llm if CHATBOT_AVAILABLE and hasattr(app, 'llm') else None
+            embedding = app.emb if CHATBOT_AVAILABLE and hasattr(app, 'emb') else None
+            
+            kcn_detail_result = process_kcn_detail_query(question, llm=llm, embedding=embedding)
+            if kcn_detail_result:
+                if kcn_detail_result["type"] == "kcn_detail":
+                    # Tạo response với thông tin chi tiết, tọa độ chính xác và RAG analysis
+                    return {
+                        "answer": kcn_detail_result,
+                        "type": "kcn_detail", 
+                        "requires_contact": False,
+                        "session_id": session
+                    }
+                elif kcn_detail_result["type"] == "kcn_detail_not_found":
+                    return {
+                        "answer": kcn_detail_result["message"],
+                        "type": "text",
+                        "requires_contact": False,
+                        "session_id": session
+                    }
+
+        # ===============================
+        # 4️⃣ EXCEL KCN/CCN (BẢNG + TỌA ĐỘ) - ƯU TIÊN TRƯỚC LLM
         # ===============================
         handled, excel_payload = await run_in_threadpool(
             excel_kcn_handler.process_query,
@@ -298,19 +498,28 @@ async def predict(data: Question, request: Request):
                         })
 
             province = excel_obj.get("province") if isinstance(excel_obj, dict) else None
+            
+            # 🎯 LẤY PROVINCE ZOOM INFO
+            province_zoom = None
+            if province and province != "TOÀN QUỐC":
+                province_zoom = get_province_zoom_info(province)
+                if province_zoom:
+                    print(f"✅ Đã lấy province zoom cho {province}: zoom level {province_zoom['zoom_level']}")
 
             if province and province != "TOÀN QUỐC":
                 map_intent = {
                     "type": "province",
                     "province": province,
                     "iz_list": iz_list,
-                    "kind": excel_obj.get("type")
+                    "kind": excel_obj.get("type"),
+                    "province_zoom": province_zoom  # 🎯 THÊM PROVINCE ZOOM
                 }
             else:
                 map_intent = {
                     "type": "points",
                     "iz_list": iz_list,
-                    "kind": excel_obj.get("type") if isinstance(excel_obj, dict) else None
+                    "kind": excel_obj.get("type") if isinstance(excel_obj, dict) else None,
+                    "province_zoom": province_zoom  # 🎯 THÊM PROVINCE ZOOM (có thể null)
                 }
 
             return {
@@ -322,7 +531,7 @@ async def predict(data: Question, request: Request):
             }
 
         # ===============================
-        # 4️⃣ FALLBACK: gọi chatbot thật (RAG/PDF pipeline)
+        # 5️⃣ FALLBACK: gọi chatbot thật (RAG/PDF pipeline)
         # ===============================
         if CHATBOT_AVAILABLE and hasattr(app, "chatbot") and hasattr(app.chatbot, "invoke"):
             try:
@@ -345,6 +554,7 @@ async def predict(data: Question, request: Request):
                 else:
                     answer = f"Lỗi: Chatbot trả về định dạng không mong muốn: {repr(response)}"
 
+                # ✅ Parse flowchart JSON nếu có
                 parsed = try_parse_json_string(answer)
                 if isinstance(parsed, dict) and parsed.get("type") == "flowchart":
                     return {
@@ -497,6 +707,267 @@ async def get_chat_history(session_id: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ---------------------------------------
+# 🎯 ROUTE XUẤT JSON VỚI TỌA ĐỘ VÀ PROVINCE ZOOM
+# ---------------------------------------
+@app_fastapi.post("/export-json", summary="Xuất dữ liệu JSON với tọa độ và province zoom")
+async def export_json(data: Question):
+    question = (data.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Thiếu câu hỏi")
+
+    try:
+        # Xử lý query giống như /chat nhưng chỉ trả JSON
+        handled, excel_payload = await run_in_threadpool(
+            excel_kcn_handler.process_query,
+            question,
+            True
+        )
+
+        if not handled or not excel_payload:
+            raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu phù hợp")
+
+        try:
+            excel_obj = json.loads(excel_payload) if isinstance(excel_payload, str) else excel_payload
+        except Exception:
+            raise HTTPException(status_code=500, detail="Dữ liệu không hợp lệ")
+
+        if isinstance(excel_obj, dict) and excel_obj.get("error"):
+            raise HTTPException(status_code=400, detail=excel_obj["error"])
+
+        # Thêm province zoom info
+        province = excel_obj.get("province")
+        if province and province != "TOÀN QUỐC":
+            province_zoom = get_province_zoom_info(province)
+            if province_zoom:
+                excel_obj["province_zoom"] = province_zoom
+
+        # Tạo filename ASCII-safe
+        import re
+        import unicodedata
+        
+        def make_ascii_filename(text):
+            # Normalize unicode và loại bỏ dấu
+            normalized = unicodedata.normalize('NFD', text)
+            ascii_text = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+            # Chỉ giữ lại ký tự ASCII an toàn
+            safe_text = re.sub(r'[^\w\-_]', '_', ascii_text)
+            return safe_text
+        
+        province_name = make_ascii_filename(province) if province else "Unknown"
+        type_name = make_ascii_filename(excel_obj.get("type", "KCN"))
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"Export_{province_name}_{type_name}_{timestamp}.json"
+
+        # Trả về JSON file
+        from fastapi.responses import JSONResponse
+        
+        return JSONResponse(
+            content=excel_obj,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xuất JSON: {str(e)}")
+
+@app_fastapi.post("/export-chart-json", summary="Xuất dữ liệu biểu đồ JSON với tọa độ")
+async def export_chart_json(data: Question):
+    question = (data.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Thiếu câu hỏi")
+
+    try:
+        # Xử lý excel visualize
+        if not is_excel_visualize_intent(question):
+            raise HTTPException(status_code=400, detail="Không phải câu hỏi về biểu đồ")
+
+        excel_result = await run_in_threadpool(
+            handle_excel_visualize,
+            message=question
+        )
+
+        if excel_result.get("type") == "error":
+            raise HTTPException(status_code=400, detail=excel_result.get("message", "Lỗi tạo biểu đồ"))
+
+        # Tạo filename ASCII-safe
+        import re
+        import unicodedata
+        
+        def make_ascii_filename(text):
+            # Normalize unicode và loại bỏ dấu
+            normalized = unicodedata.normalize('NFD', text)
+            ascii_text = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+            # Chỉ giữ lại ký tự ASCII an toàn
+            safe_text = re.sub(r'[^\w\-_]', '_', ascii_text)
+            return safe_text
+        
+        province_name = make_ascii_filename(excel_result.get("province", "Unknown"))
+        metric = excel_result.get("metric", "chart")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"Chart_{province_name}_{metric}_{timestamp}.json"
+
+        # Trả về JSON file
+        from fastapi.responses import JSONResponse
+        
+        return JSONResponse(
+            content=excel_result,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xuất JSON biểu đồ: {str(e)}")
+
+# ---------------------------------------
+# 🗺️ ROUTES CHO INTERACTIVE MAP CHATBOT
+# ---------------------------------------
+
+# Global variable để lưu map intent
+_current_map_intent = None
+
+@app_fastapi.post("/chatbot", summary="API cho chatbot trong interactive map")
+async def chatbot_for_map(data: Question):
+    """API tương thích với chatbot trong interactive_satellite_map.html"""
+    global _current_map_intent
+    
+    question = (data.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Thiếu câu hỏi")
+
+    # ✅ Lấy session_id
+    session = data.session_id or f"map-{uuid.uuid4()}"
+
+    try:
+        answer = None
+        map_intent = None
+
+        # ===============================
+        # 1️⃣ MST INTENT
+        # ===============================
+        if is_mst_query(question):
+            if not CHATBOT_AVAILABLE:
+                return {"answer": "Backend chưa sẵn sàng", "map_intent": None}
+
+            mst_answer = await run_in_threadpool(
+                handle_mst_query,
+                message=question,
+                llm=app.llm,
+                embedding=app.emb
+            )
+            return {"answer": mst_answer, "map_intent": None}
+
+        # ===============================
+        # 2️⃣ EXCEL KCN/CCN (BẢNG + TỌA ĐỘ)
+        # ===============================
+        handled, excel_payload = await run_in_threadpool(
+            excel_kcn_handler.process_query,
+            question,
+            True
+        )
+
+        if handled and excel_payload:
+            try:
+                excel_obj = json.loads(excel_payload) if isinstance(excel_payload, str) else excel_payload
+            except Exception:
+                excel_obj = {"error": "ExcelQuery trả về dữ liệu không hợp lệ."}
+
+            if isinstance(excel_obj, dict) and excel_obj.get("error"):
+                return {"answer": excel_obj, "map_intent": None}
+
+            # Tạo map_intent cho interactive map
+            province = excel_obj.get("province")
+            if province and province != "TOÀN QUỐC":
+                # Tạo iz_list từ data
+                iz_list = []
+                for item in excel_obj.get("data", []):
+                    coords = item.get("coordinates")
+                    if coords and len(coords) == 2:
+                        iz_list.append({
+                            "name": item.get("Tên", ""),
+                            "kind": item.get("Loại", ""),
+                            "address": item.get("Địa chỉ", ""),
+                            "coordinates": coords
+                        })
+
+                # 🎯 LẤY PROVINCE ZOOM INFO
+                province_zoom = get_province_zoom_info(province)
+                
+                map_intent = {
+                    "type": "province",
+                    "province": province,
+                    "iz_list": iz_list,
+                    "province_zoom": province_zoom  # 🎯 THÊM PROVINCE ZOOM
+                }
+
+                # Nếu chỉ có 1 kết quả, zoom vào zone cụ thể
+                if len(iz_list) == 1:
+                    zone = iz_list[0]
+                    map_intent = {
+                        "type": "zone",
+                        "zone_name": zone["name"],
+                        "coordinates": zone["coordinates"],
+                        "province_zoom": province_zoom  # 🎯 THÊM PROVINCE ZOOM
+                    }
+
+            # Lưu map_intent để polling
+            _current_map_intent = map_intent
+
+            return {"answer": excel_obj, "map_intent": map_intent}
+
+        # ===============================
+        # 3️⃣ FALLBACK: gọi chatbot thật
+        # ===============================
+        if CHATBOT_AVAILABLE and hasattr(app, "chatbot"):
+            try:
+                response = await run_in_threadpool(
+                    app.chatbot.invoke,
+                    {"message": question},
+                    config={"configurable": {"session_id": session}}
+                )
+
+                if isinstance(response, dict) and "output" in response:
+                    answer = response["output"]
+                elif isinstance(response, str):
+                    answer = response
+                else:
+                    answer = f"Lỗi: Chatbot trả về định dạng không mong muốn"
+
+            except Exception as e:
+                answer = f"Lỗi xử lý: {str(e)}"
+        else:
+            answer = f"Chatbot không khả dụng. Bạn hỏi: '{question}'"
+
+        return {"answer": answer, "map_intent": map_intent}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {str(e)}")
+
+@app_fastapi.get("/map_intent_poll", summary="Polling map intent cho interactive map")
+async def map_intent_poll():
+    """API để interactive map poll map intent"""
+    global _current_map_intent
+    
+    if _current_map_intent:
+        intent = _current_map_intent
+        _current_map_intent = None  # Clear sau khi trả về
+        return intent
+    else:
+        return {"status": "empty"}
+
+@app_fastapi.post("/map_intent", summary="Set map intent cho interactive map")
+async def set_map_intent(intent_data: dict):
+    """API để set map intent từ bên ngoài"""
+    global _current_map_intent
+    _current_map_intent = intent_data
+    return {"status": "success"}
 
 # ---------------------------------------
 # 7️⃣ Run server
