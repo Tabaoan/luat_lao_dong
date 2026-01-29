@@ -410,28 +410,81 @@ CHỈ TRẢ VỀ JSON (không có markdown, không có text thêm):
                     if province:
                         break
             
-            # If not TP.HCM, check other provinces
+            # If not TP.HCM, check other provinces - IMPROVED
             if not province:
+                # First try exact match
                 for prov in unique_provinces:
                     prov_norm = self._normalize_text(str(prov).lower())
                     if prov_norm in question_norm:
                         province = str(prov)
                         break
+                
+                # If no exact match, try partial match for common abbreviations
+                if not province:
+                    province_mappings = {
+                        "ha noi": ["ha noi", "hanoi", "hn"],
+                        "binh duong": ["binh duong", "bd"],
+                        "dong nai": ["dong nai"], # Removed "dn" to avoid conflict
+                        "bac ninh": ["bac ninh", "bn"],
+                        "hai phong": ["hai phong", "haiphong", "hp"],
+                        "da nang": ["da nang", "dn", "danang"], # Keep "dn" for Da Nang priority
+                        "can tho": ["can tho", "cantho", "ct"],
+                        "vinh phuc": ["vinh phuc", "vp"],
+                        "thanh hoa": ["thanh hoa", "th"],
+                        "nghe an": ["nghe an", "na"],
+                        "quang ninh": ["quang ninh", "qn"],
+                        "quang nam": ["quang nam"],
+                        "long an": ["long an", "la"],
+                        "bac giang": ["bac giang", "bg"],
+                        "ba ria vung tau": ["ba ria vung tau", "brvt"],
+                        "thua thien hue": ["thua thien hue", "tth"]
+                    }
+                    
+                    # IMPROVED: Check for exact abbreviation matches first (higher priority)
+                    for prov in unique_provinces:
+                        prov_norm = self._normalize_text(str(prov).lower())
+                        # Check if any abbreviation matches
+                        for key, abbreviations in province_mappings.items():
+                            if key in prov_norm:
+                                for abbr in abbreviations:
+                                    # Exact match for abbreviations to avoid conflicts
+                                    if abbr == question_norm.strip() or f" {abbr} " in f" {question_norm} " or question_norm.endswith(f" {abbr}") or question_norm.startswith(f"{abbr} "):
+                                        province = str(prov)
+                                        break
+                                    # Partial match for full names
+                                    elif len(abbr) > 2 and abbr in question_norm:
+                                        province = str(prov)
+                                        break
+                                if province:
+                                    break
+                        if province:
+                            break
         
         # Determine search type based on patterns
-        # Check for location indicators (province search)
-        location_indicators = ["o ", "tai ", "trong ", "tinh ", "thanh pho ", "danh sach"]
+        # Check for location indicators (province search) - IMPROVED
+        location_indicators = ["o ", "tai ", "trong ", "tinh ", "thanh pho ", "danh sach", "list", "liet ke"]
         has_location_indicator = any(indicator in question_norm for indicator in location_indicators)
         
         # Check for specific name indicators
-        specific_indicators = ["thong tin ve", "cho toi thong tin", "chi tiet ve", "ve khu cong nghiep", "ve cum cong nghiep"]
+        specific_indicators = ["thong tin ve", "cho toi thong tin", "chi tiet ve", "detail", "ve khu cong nghiep", "ve cum cong nghiep"]
         has_specific_indicator = any(indicator in question_norm for indicator in specific_indicators)
         
-        # Decision logic: prioritize province search if we found a province OR have location indicators
-        if province or has_location_indicator:
+        # IMPROVED Decision logic: 
+        # 1. If we found a province name, it's likely a province search
+        # 2. If we have location indicators, it's province search
+        # 3. If it's a short query with industrial keywords + province, it's province search
+        # 4. Only if we have specific indicators without province, it's specific name search
+        
+        if province:
+            # We found a province, definitely province search
             search_type = "province"
             specific_name = None
-        elif has_specific_indicator:
+        elif has_location_indicator:
+            # Has location words like "ở", "tại" - province search
+            search_type = "province"
+            specific_name = None
+        elif has_specific_indicator and not province:
+            # Has specific indicators but no province found - specific name search
             search_type = "specific_name"
             # Try to extract the specific name (simplified)
             if "khu cong nghiep" in question_norm:
@@ -444,6 +497,11 @@ CHỈ TRẢ VỀ JSON (không có markdown, không có text thêm):
                 parts = question_norm.split("cum cong nghiep")
                 if len(parts) > 1:
                     specific_name = f"cum cong nghiep{parts[1]}".strip()
+        else:
+            # Default: if it's an industrial query, assume province search
+            # This handles short queries like "KCN Bình Dương", "CCN HCM"
+            search_type = "province"
+            specific_name = None
         
         # Detect type (simplified) - CẢI THIỆN LOGIC
         has_cum = any(k in question_norm for k in ["cum", "ccn"])
@@ -1120,49 +1178,62 @@ CHỈ TRẢ VỀ MỘT TRONG HAI:
     def is_kcn_detail_query(self, question: str) -> bool:
         """
         Kiểm tra xem câu hỏi có phải là tra cứu chi tiết KCN/CCN không
+        
+        QUAN TRỌNG: Chỉ trả về True cho các câu hỏi về KCN/CCN CỤ THỂ,
+        KHÔNG phải câu hỏi về KCN/CCN theo tỉnh/khu vực.
+        
+        VÍ DỤ DETAIL QUERY (True):
+        - "thông tin về KCN VSIP Bình Dương"
+        - "cho tôi biết về CCN Tân Bình"
+        - "KCN Long Hậu ở đâu"
+        - "Detail KCN ABC"
+        - "Khu công nghiệp VSIP" (chỉ tên, không có location)
+        
+        VÍ DỤ KHÔNG PHẢI DETAIL (False):
+        - "KCN ở Bình Dương" (province query)
+        - "CCN tại Nghệ An" (province query)
+        - "danh sách KCN ở HCM" (list query)
         """
         question_lower = question.lower().strip()
         
-        # Kiểm tra từ khóa "Detail" trước - ưu tiên cao nhất
+        # 1. Kiểm tra từ khóa "Detail" trước - ưu tiên cao nhất
         if question_lower.startswith('detail '):
-            # Nếu bắt đầu bằng "Detail" và có KCN/CCN thì chắc chắn là detail query
             kcn_keywords = ['kcn', 'ccn', 'khu công nghiệp', 'cụm công nghiệp']
             if any(keyword in question_lower for keyword in kcn_keywords):
-                print(f"🎯 Detected Detail query: {question}")
+                print(f"🎯 Detected Detail query (explicit): {question}")
                 return True
         
-        # Loại trừ các query tổng quát trước
-        general_keywords = [
-            'các khu công nghiệp', 'danh sách', 'tất cả', 'những khu công nghiệp',
-            'khu công nghiệp nào', 'có bao nhiêu', 'số lượng', 'liệt kê',
-            'ở ', ' tại ', ' trong ', 'tỉnh ', 'thành phố'
+        # 2. LOẠI TRỪ NGAY các pattern province-based (QUAN TRỌNG)
+        province_patterns = [
+            r'(kcn|ccn|khu công nghiệp|cụm công nghiệp)\s+(ở|tại|trong)\s+',  # "KCN ở Bình Dương"
+            r'(ở|tại|trong)\s+.*(kcn|ccn|khu công nghiệp|cụm công nghiệp)',   # "ở HCM có KCN nào"
+            r'danh sách.*(kcn|ccn)',                                           # "danh sách KCN"
+            r'(có bao nhiêu|số lượng).*(kcn|ccn)',                            # "có bao nhiêu KCN"
+            r'(kcn|ccn).*\s+(tỉnh|thành phố)',                                # "KCN tỉnh Bình Dương"
+            r'(các|những)\s+(kcn|ccn)',                                       # "các KCN"
+            r'(kcn|ccn)\s+nào',                                               # "KCN nào"
+            r'^(kcn|ccn)\s+(hcm|hà nội|đà nẵng|bình dương|nghệ an|bắc giang|bắc ninh|hải phòng|long an|đồng nai|vĩnh phúc|thanh hóa)$',  # "CCN HCM"
         ]
         
-        # Nếu có từ khóa tổng quát, kiểm tra kỹ hơn
-        has_general = any(keyword in question_lower for keyword in general_keywords)
+        for pattern in province_patterns:
+            if re.search(pattern, question_lower):
+                print(f"❌ Rejected as province query: {question}")
+                return False
         
-        # Keywords chỉ tra cứu chi tiết
+        # 3. Kiểm tra có từ khóa detail cụ thể
         detail_keywords = [
             'thông tin về', 'cho tôi biết về', 'tìm hiểu về', 'giới thiệu về',
-            'chi tiết về', 'mô tả về', 'ở đâu', 'nằm ở đâu', 'vị trí',
-            'địa chỉ của', 'liên hệ', 'contact', 'detail'
+            'chi tiết về', 'mô tả về', 'ở đâu', 'nằm ở đâu', 'vị trí của',
+            'địa chỉ của', 'liên hệ', 'contact'
         ]
         
-        # Keywords KCN/CCN
-        kcn_keywords = [
-            'khu công nghiệp', 'kcn', 'cụm công nghiệp', 'ccn',
-            'khu cn', 'cụm cn'
-        ]
-        
-        # Kiểm tra có keyword detail và KCN
         has_detail_keyword = any(keyword in question_lower for keyword in detail_keywords)
-        has_kcn_keyword = any(keyword in question_lower for keyword in kcn_keywords)
         
-        # Pattern đặc biệt: chỉ có "KCN/CCN + tên" mà không có từ tổng quát
-        # Ví dụ: "Khu công nghiệp VSIP", "CCN Tân Bình"
+        # 4. Pattern đặc biệt: "KCN/CCN + tên cụ thể" (không có location indicators)
+        # Ví dụ: "Khu công nghiệp VSIP", "CCN Tân Thuận"
         simple_kcn_patterns = [
-            r'^(khu công nghiệp|kcn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s*$',
-            r'^(cụm công nghiệp|ccn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s*$'
+            r'^(khu công nghiệp|kcn)\s+(?!.*\b(ở|tại|trong)\b)[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s*$',
+            r'^(cụm công nghiệp|ccn)\s+(?!.*\b(ở|tại|trong)\b)[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s*$'
         ]
         
         # Kiểm tra pattern đơn giản trước
@@ -1171,39 +1242,41 @@ CHỈ TRẢ VỀ MỘT TRONG HAI:
                 print(f"🎯 Detected simple KCN pattern: {question}")
                 return True
         
-        # Nếu có từ tổng quát nhưng không có detail keyword thì không phải detail query
-        if has_general and not has_detail_keyword:
-            return False
-        
-        # Kiểm tra có tên KCN cụ thể (không chỉ là từ khóa chung)
-        specific_kcn_patterns = [
-            r'(khu công nghiệp|kcn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*',
-            r'(cụm công nghiệp|ccn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*'
+        # 5. Kiểm tra có tên KCN/CCN cụ thể với detail keywords
+        specific_name_patterns = [
+            r'(khu công nghiệp|kcn)\s+([a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*)',  # Cho phép tên có tỉnh
+            r'(cụm công nghiệp|ccn)\s+([a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*)'   # Cho phép tên có tỉnh
         ]
         
         has_specific_name = False
-        for pattern in specific_kcn_patterns:
-            matches = re.findall(pattern, question_lower)
-            if matches:
-                # Kiểm tra xem có phải chỉ là tên tỉnh không
-                for match in matches:
-                    full_match = match[0] + ' ' + match[1] if isinstance(match, tuple) else match
-                    # Loại trừ nếu chỉ là "khu công nghiệp ở [tỉnh]"
-                    if not re.search(r'\s+ở\s+', full_match) and len(full_match.split()) >= 3:
-                        has_specific_name = True
-                        break
+        if has_detail_keyword:
+            for pattern in specific_name_patterns:
+                matches = re.findall(pattern, question_lower)
+                if matches:
+                    for match in matches:
+                        # match[1] là tên sau KCN/CCN
+                        name_part = match[1].strip()
+                        # Phải có ít nhất 1 từ
+                        if len(name_part.split()) >= 1:
+                            has_specific_name = True
+                            break
         
-        # Trường hợp đặc biệt: "KCN ABC ở đâu" - có tên cụ thể + "ở đâu"
-        location_question_pattern = r'(khu công nghiệp|kcn|ccn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s+ở\s+đâu'
-        if re.search(location_question_pattern, question_lower):
-            has_specific_name = True
-            has_detail_keyword = True
+        # 6. Pattern đặc biệt: "KCN ABC ở đâu" - có tên cụ thể + "ở đâu"
+        location_question_pattern = r'(khu công nghiệp|kcn|ccn)\s+([a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*)\s+ở\s+đâu'
+        location_match = re.search(location_question_pattern, question_lower)
+        if location_match:
+            name_part = location_match.group(2).strip()
+            if len(name_part.split()) >= 1:  # Ít nhất 1 từ cho "ở đâu" pattern
+                has_specific_name = True
+                has_detail_keyword = True
         
-        result = (has_detail_keyword and has_kcn_keyword and has_specific_name) or \
-                 (has_specific_name and not has_general)
+        # 7. Quyết định cuối cùng
+        result = has_detail_keyword and has_specific_name
         
         if result:
             print(f"🎯 Detected KCN detail query: {question}")
+        else:
+            print(f"❌ Not a KCN detail query: {question}")
         
         return result
 
@@ -1856,96 +1929,6 @@ if __name__ == "__main__":
     # 🆕 IMPROVED KCN DETAIL QUERY WITH MULTIPLE CHOICE SUPPORT
     # ==========================================================
     
-    def is_kcn_detail_query(self, question: str) -> bool:
-        """
-        Kiểm tra xem câu hỏi có phải là tra cứu chi tiết KCN/CCN không
-        """
-        question_lower = question.lower().strip()
-        
-        # Kiểm tra từ khóa "Detail" trước - ưu tiên cao nhất
-        if question_lower.startswith('detail '):
-            # Nếu bắt đầu bằng "Detail" và có KCN/CCN thì chắc chắn là detail query
-            kcn_keywords = ['kcn', 'ccn', 'khu công nghiệp', 'cụm công nghiệp']
-            if any(keyword in question_lower for keyword in kcn_keywords):
-                print(f"🎯 Detected Detail query: {question}")
-                return True
-        
-        # Loại trừ các query tổng quát trước
-        general_keywords = [
-            'các khu công nghiệp', 'danh sách', 'tất cả', 'những khu công nghiệp',
-            'khu công nghiệp nào', 'có bao nhiêu', 'số lượng', 'liệt kê',
-            'ở ', ' tại ', ' trong ', 'tỉnh ', 'thành phố'
-        ]
-        
-        # Nếu có từ khóa tổng quát, kiểm tra kỹ hơn
-        has_general = any(keyword in question_lower for keyword in general_keywords)
-        
-        # Keywords chỉ tra cứu chi tiết
-        detail_keywords = [
-            'thông tin về', 'cho tôi biết về', 'tìm hiểu về', 'giới thiệu về',
-            'chi tiết về', 'mô tả về', 'ở đâu', 'nằm ở đâu', 'vị trí',
-            'địa chỉ của', 'liên hệ', 'contact', 'detail'
-        ]
-        
-        # Keywords KCN/CCN
-        kcn_keywords = [
-            'khu công nghiệp', 'kcn', 'cụm công nghiệp', 'ccn',
-            'khu cn', 'cụm cn'
-        ]
-        
-        # Kiểm tra có keyword detail và KCN
-        has_detail_keyword = any(keyword in question_lower for keyword in detail_keywords)
-        has_kcn_keyword = any(keyword in question_lower for keyword in kcn_keywords)
-        
-        # Pattern đặc biệt: chỉ có "KCN/CCN + tên" mà không có từ tổng quát
-        # Ví dụ: "Khu công nghiệp VSIP", "CCN Tân Bình"
-        simple_kcn_patterns = [
-            r'^(khu công nghiệp|kcn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s*$',
-            r'^(cụm công nghiệp|ccn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s*$'
-        ]
-        
-        # Kiểm tra pattern đơn giản trước
-        for pattern in simple_kcn_patterns:
-            if re.match(pattern, question_lower):
-                print(f"🎯 Detected simple KCN pattern: {question}")
-                return True
-        
-        # Nếu có từ tổng quát nhưng không có detail keyword thì không phải detail query
-        if has_general and not has_detail_keyword:
-            return False
-        
-        # Kiểm tra có tên KCN cụ thể (không chỉ là từ khóa chung)
-        specific_kcn_patterns = [
-            r'(khu công nghiệp|kcn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*',
-            r'(cụm công nghiệp|ccn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*'
-        ]
-        
-        has_specific_name = False
-        for pattern in specific_kcn_patterns:
-            matches = re.findall(pattern, question_lower)
-            if matches:
-                # Kiểm tra xem có phải chỉ là tên tỉnh không
-                for match in matches:
-                    full_match = match[0] + ' ' + match[1] if isinstance(match, tuple) else match
-                    # Loại trừ nếu chỉ là "khu công nghiệp ở [tỉnh]"
-                    if not re.search(r'\s+ở\s+', full_match) and len(full_match.split()) >= 3:
-                        has_specific_name = True
-                        break
-        
-        # Trường hợp đặc biệt: "KCN ABC ở đâu" - có tên cụ thể + "ở đâu"
-        location_question_pattern = r'(khu công nghiệp|kcn|ccn)\s+[a-zA-ZÀ-ỹ0-9]+(?:\s+[a-zA-ZÀ-ỹ0-9\-]+)*\s+ở\s+đâu'
-        if re.search(location_question_pattern, question_lower):
-            has_specific_name = True
-            has_detail_keyword = True
-        
-        result = (has_detail_keyword and has_kcn_keyword and has_specific_name) or \
-                 (has_specific_name and not has_general)
-        
-        if result:
-            print(f"🎯 Detected KCN detail query: {question}")
-        
-        return result
-
     def process_kcn_detail_query_with_multiple_choice(self, question: str) -> Optional[Dict]:
         """
         Xử lý câu hỏi tra cứu chi tiết KCN/CCN với hỗ trợ multiple choice
