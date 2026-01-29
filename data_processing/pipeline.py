@@ -282,17 +282,19 @@ Trả lời bằng ngôn ngữ: {user_lang}.
             messages.append(
                 HumanMessage(
                     content=f"""
-    Câu hỏi hiện tại (nối tiếp hội thoại trước đó):
-    {clean_question}
+Câu hỏi hiện tại (nối tiếp hội thoại trước đó):
+{clean_question}
 
-    YÊU CẦU BẮT BUỘC:
-    - Đây là câu hỏi FOLLOW-UP.
-    - PHẢI trả lời dựa trên văn bản/vấn đề pháp lý đã được xác định trong lịch sử hội thoại.
-    - TUYỆT ĐỐI không chuyển sang văn bản pháp luật khác nếu người dùng không nêu rõ.
-    - Nếu lịch sử chưa đủ để xác định điều/khoản cụ thể, hãy hỏi lại 1 câu làm rõ.
+YÊU CẦU BẮT BUỘC:
+- Đây là câu hỏi FOLLOW-UP.
+- PHẢI trả lời dựa trên văn bản/vấn đề pháp lý đã được xác định trong lịch sử hội thoại.
+- TUYỆT ĐỐI không chuyển sang văn bản pháp luật khác nếu người dùng không nêu rõ.
+- Nếu lịch sử chưa đủ để xác định điều/khoản cụ thể, hãy hỏi lại 1 câu làm rõ.
+- Hãy trả lời ĐẦY ĐỦ, CHI TIẾT, KHÔNG được cắt ngắn hoặc dừng giữa chừng.
+- PHẢI hoàn thành câu trả lời một cách trọn vẹn.
 
-    Trả lời bằng ngôn ngữ: {user_lang}.
-    """
+Trả lời bằng ngôn ngữ: {user_lang}.
+"""
                 )
             )
 
@@ -311,14 +313,18 @@ Trả lời bằng ngôn ngữ: {user_lang}.
 
         if has_context:
             human = f"""
-    Câu hỏi: {clean_question}
+Câu hỏi: {clean_question}
 
-    Nội dung liên quan:
-    {context}
+Nội dung liên quan:
+{context}
 
-    Hãy trả lời đầy đủ, chính xác theo tài liệu.
-    Trả lời bằng ngôn ngữ: {user_lang}.
-    """
+YÊU CẦU BẮT BUỘC:
+- Hãy trả lời ĐẦY ĐỦ, CHI TIẾT, KHÔNG được cắt ngắn hoặc tóm tắt.
+- Phải trình bày TOÀN BỘ thông tin có trong tài liệu liên quan.
+- KHÔNG được dừng giữa chừng, phải hoàn thành câu trả lời.
+- Nếu có nhiều điều khoản, phải liệt kê HẾT TẤT CẢ.
+- Trả lời bằng ngôn ngữ: {user_lang}.
+"""
             messages.append(HumanMessage(content=human))
             response = llm.invoke(messages).content
             return response if user_lang == "vi" else convert_language(response, user_lang, lang_llm)
