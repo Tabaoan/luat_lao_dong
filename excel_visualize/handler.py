@@ -19,16 +19,10 @@ import re
 import unicodedata
 from typing import Optional, Dict
 
-# 🎯 IMPORT KCN DETAIL QUERY
-try:
-    from kcn_detail_query import process_kcn_detail_query
-    KCN_DETAIL_AVAILABLE = True
-    print("✅ KCN Detail Query module loaded")
-except ImportError as e:
-    KCN_DETAIL_AVAILABLE = False
-    print(f"⚠️ KCN Detail Query not available: {e}")
-    def process_kcn_detail_query(*args, **kwargs):
-        return None
+# 🎯 KCN DETAIL QUERY - INTEGRATED INTO EXCEL_QUERY
+# KCN Detail Query functionality is now integrated into excel_query module
+KCN_DETAIL_AVAILABLE = True
+print("✅ KCN Detail Query integrated into excel_query module")
 
 # ===============================
 # Province Zoom Handler - Di chuyển từ main.py
