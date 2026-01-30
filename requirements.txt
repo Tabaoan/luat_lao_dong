@@ -24,3 +24,5 @@ matplotlib == 3.10.8
 pytz == 2025.2
 pathlib == 1.0.1
 sqlalchemy>=2.0.0
+qdrant-client==1.9.1
+langchain-qdrant
