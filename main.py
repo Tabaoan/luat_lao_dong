@@ -211,10 +211,14 @@ async def predict(data: Question, request: Request):
                     hm = app.get_history(session)
                     chat_history = hm.messages[-6:] if hm.messages else []
 
-                # GỌI AGENT (Rất nhanh vì gói tin trả về từ tool rất nhẹ)
-                iz_result = await run_in_threadpool(
-                    iz_executor.invoke,
-                    {"input": question, "chat_history": chat_history}
+                # GỌI AGENT với timeout
+                import asyncio
+                iz_result = await asyncio.wait_for(
+                    run_in_threadpool(
+                        iz_executor.invoke,
+                        {"input": question, "chat_history": chat_history}
+                    ),
+                    timeout=180.0  # Tăng từ 25 lên 180 giây (3 phút)
                 )
 
                 final_output = iz_result.get("output", "")
@@ -224,24 +228,34 @@ async def predict(data: Question, request: Request):
                 
                 # Duyệt qua các bước chạy của Tool
                 for action, output in iz_result.get("intermediate_steps", []):
-                    if isinstance(output, dict) and output.get("type") == "excel_visualize_with_data":
-                        tool_payload = output
-                        tool_payload["text"] = final_output
+                    if isinstance(output, dict):
+                        output_type = output.get("type")
                         
-                        # ✅ CHECK: Có vé (chart_id) không?
-                        chart_id = tool_payload.get("chart_id")
+                        # Xử lý flexible search tool (có biểu đồ)
+                        if output_type == "excel_visualize_with_data":
+                            tool_payload = output
+                            tool_payload["text"] = final_output
+                            
+                            # ✅ CHECK: Có vé (chart_id) không?
+                            chart_id = tool_payload.get("chart_id")
+                            
+                            if chart_id and chart_id in CHART_STORE:
+                                # ✅ LẤY ẢNH THẬT TỪ KHO RA
+                                print(f"📸 Đang lấy ảnh từ kho (ID: {chart_id})...")
+                                real_base64 = CHART_STORE[chart_id]
+                                
+                                # Gán vào payload để trả về cho Frontend/Postman
+                                tool_payload["chart_base64"] = real_base64
+                                
+                                # (Tùy chọn) Xóa khỏi kho để giải phóng RAM sau khi dùng xong
+                                # del CHART_STORE[chart_id]
+                            break
                         
-                        if chart_id and chart_id in CHART_STORE:
-                            # ✅ LẤY ẢNH THẬT TỪ KHO RA
-                            print(f"📸 Đang lấy ảnh từ kho (ID: {chart_id})...")
-                            real_base64 = CHART_STORE[chart_id]
-                            
-                            # Gán vào payload để trả về cho Frontend/Postman
-                            tool_payload["chart_base64"] = real_base64
-                            
-                            # (Tùy chọn) Xóa khỏi kho để giải phóng RAM sau khi dùng xong
-                            # del CHART_STORE[chart_id]
-                        break
+                        # Xử lý single zone tool (có coordinates)
+                        elif output_type in ["single_zone_info", "multiple_choices", "error"]:
+                            tool_payload = output
+                            tool_payload["text"] = final_output
+                            break
                 
                 # Lưu lịch sử chat
                 if hasattr(app, 'get_history'):
@@ -250,24 +264,81 @@ async def predict(data: Question, request: Request):
 
                 # TRẢ VỀ CHO POSTMAN
                 if tool_payload:
+                    payload_type = tool_payload.get("type")
+                    
+                    # Làm sạch payload trước khi trả về
+                    import json
+                    import math
+                    import pandas as pd
+                    
+                    def clean_for_json(obj):
+                        if isinstance(obj, dict):
+                            return {k: clean_for_json(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [clean_for_json(item) for item in obj]
+                        elif isinstance(obj, float):
+                            if math.isnan(obj) or math.isinf(obj):
+                                return None
+                        elif pd.isna(obj):
+                            return None
+                        elif isinstance(obj, str) and obj.lower() in ['nan', 'inf', '-inf']:
+                            return None
+                        return obj
+                    
+                    clean_payload = clean_for_json(tool_payload)
+                    
                     # Cắt log để server không lag khi print
-                    debug_payload = tool_payload.copy()
+                    debug_payload = clean_payload.copy()
                     if "chart_base64" in debug_payload and debug_payload["chart_base64"]:
                         debug_payload["chart_base64"] = "✅ [IMAGE DATA EXISTS - HIDDEN FROM LOG]"
                     
                     print(f"🚀 Response sent to Client: {json.dumps(debug_payload, ensure_ascii=False)}")
 
-                    return {
-                        "answer": final_output,
-                        "type": "excel_visualize_with_data",
-                        "payload": tool_payload, # <-- Ở đây đã có ảnh thật
-                        "session_id": session
-                    }
+                    # Trả về response phù hợp với từng loại tool
+                    if payload_type == "excel_visualize_with_data":
+                        return {
+                            "answer": final_output,
+                            "type": "excel_visualize_with_data",
+                            "payload": clean_payload, # <-- Ở đây đã có ảnh thật và đã làm sạch
+                            "session_id": session
+                        }
+                    elif payload_type in ["single_zone_info", "multiple_choices"]:
+                        return {
+                            "answer": final_output,
+                            "type": payload_type,
+                            "payload": clean_payload, # <-- Có coordinates và đã làm sạch
+                            "session_id": session
+                        }
+                    elif payload_type == "error":
+                        return {
+                            "answer": final_output,
+                            "type": "text",
+                            "session_id": session
+                        }
+                    else:
+                        return {
+                            "answer": final_output,
+                            "type": "excel_visualize_with_data",
+                            "payload": clean_payload,
+                            "session_id": session
+                        }
                 
                 return {"answer": final_output, "type": "text", "session_id": session}
 
+            except asyncio.TimeoutError:
+                print(f"⏰ IZ Agent Timeout: Câu hỏi quá phức tạp, vượt quá 180 giây (3 phút)")
+                return {
+                    "answer": "Xin lỗi, câu hỏi của bạn quá phức tạp và mất nhiều thời gian xử lý (hơn 3 phút). Vui lòng thử lại với câu hỏi đơn giản hơn.",
+                    "type": "text",
+                    "session_id": session
+                }
             except Exception as e:
                 print(f"❌ IZ Agent Error: {e}")
+                return {
+                    "answer": "Đã xảy ra lỗi khi xử lý câu hỏi. Vui lòng thử lại.",
+                    "type": "text", 
+                    "session_id": session
+                }
 
         # ===============================
         # 3️⃣ FALLBACK: CHATBOT THƯỜNG (RAG PDF)
@@ -360,5 +431,5 @@ async def get_chat_history(session_id: str):
 # Run server
 # ---------------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app_fastapi", host="0.0.0.0", port=port, log_level="info", reload=True)

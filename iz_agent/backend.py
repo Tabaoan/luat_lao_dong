@@ -26,7 +26,7 @@ class IIPMapBackend:
             
         self.geojson_map = {}
         
-        # Mapping cột chuẩn (giữ nguyên để đảm bảo core function không lỗi)
+        # Mapping cột chuẩn (tự động tìm nếu không khớp)
         self.cols = {
             "province": "Tỉnh/Thành phố", 
             "type": "Loại", 
@@ -54,11 +54,37 @@ class IIPMapBackend:
         # Pre-process số liệu
         if not self.df.empty:
             self._map_columns_dynamic()
-            self.df['price_num'] = self.df[self.cols['price']].apply(self._parse_price)
-            self.df['area_num'] = self.df[self.cols['area']].apply(self._parse_area)
-            self.df['name_norm'] = self.df[self.cols['name']].astype(str).apply(self._normalize)
-            self.df['type_norm'] = self.df[self.cols['type']].astype(str).apply(self._normalize)
-            self.df['prov_norm'] = self.df[self.cols['province']].astype(str).apply(self._normalize)
+            
+            # Tạo các cột chuẩn hóa cho tìm kiếm - TỰ ĐỘNG NHẬN DIỆN
+            # Tìm cột tên
+            name_col = None
+            for col in self.df.columns:
+                if any(keyword in col.lower() for keyword in ['tên', 'name']) and not col.endswith('_num'):
+                    name_col = col
+                    break
+            if name_col:
+                self.df['name_norm'] = self.df[name_col].astype(str).apply(self._normalize)
+            
+            # Tìm cột loại
+            type_col = None  
+            for col in self.df.columns:
+                if any(keyword in col.lower() for keyword in ['loại', 'type', 'kind']):
+                    type_col = col
+                    break
+            if type_col:
+                self.df['type_norm'] = self.df[type_col].astype(str).apply(self._normalize)
+            
+            # Tìm cột tỉnh
+            prov_col = None
+            for col in self.df.columns:
+                if any(keyword in col.lower() for keyword in ['tỉnh', 'thành phố', 'province', 'city']):
+                    prov_col = col
+                    break
+            if prov_col:
+                self.df['prov_norm'] = self.df[prov_col].astype(str).apply(self._normalize)
+            
+            # Tự động tạo các cột số cho tất cả cột có thể chứa số
+            self._create_numeric_columns()
 
     def _map_columns_dynamic(self):
         """Tìm tên cột gần đúng trong file Excel nếu tên cứng không khớp"""
@@ -75,6 +101,37 @@ class IIPMapBackend:
 
     def _normalize(self, text):
         return str(text).lower().strip()
+    
+    def _clean_dict_for_json(self, data_dict):
+        """Clean dictionary for JSON serialization by handling NaN values"""
+        import math
+        import pandas as pd
+        
+        cleaned = {}
+        for key, value in data_dict.items():
+            # Bỏ qua các cột _num
+            if key.endswith('_num'):
+                continue
+                
+            # Xử lý float NaN/Infinity
+            if isinstance(value, float):
+                if math.isnan(value) or math.isinf(value):
+                    cleaned[key] = None
+                    continue
+            
+            # Xử lý pandas NaN
+            if pd.isna(value):
+                cleaned[key] = None
+                continue
+                
+            # Xử lý string "nan", "inf"
+            if isinstance(value, str):
+                if value.lower() in ['nan', 'inf', '-inf', 'infinity', '-infinity']:
+                    cleaned[key] = None
+                    continue
+            
+            cleaned[key] = value
+        return cleaned
 
     def _extract_number(self, s):
         """Hàm tách số mạnh mẽ từ chuỗi lộn xộn (VD: '&nbsp;60%')"""
@@ -83,26 +140,120 @@ class IIPMapBackend:
         match = re.search(r'(\d+\.?\d*)', s)
         return float(match.group(1)) if match else None
 
-    def _parse_price(self, val):
+    def _parse_smart(self, val, col_name):
+        """Parser đơn giản - tự động nhận diện"""
         if pd.isna(val): return None
-        s = str(val).lower().replace("usd", "").replace("/m2/năm", "").replace("/m²/năm", "")
-        if "-" in s:
-            try:
+        
+        s = str(val).lower()
+        
+        # Giá: có "giá", "price", "usd"
+        if any(x in col_name.lower() for x in ['giá', 'price']) or 'usd' in s:
+            s = s.replace("usd", "").replace("/m²/năm", "").replace("/m2/năm", "")
+            if "-" in s:
                 parts = s.split("-")
-                return (self._extract_number(parts[0]) + self._extract_number(parts[1])) / 2
-            except: pass
-        return self._extract_number(s)
+                try: return (self._extract_number(parts[0]) + self._extract_number(parts[1])) / 2
+                except: pass
+        
+        # Diện tích: có "diện tích", "area", "ha"  
+        elif any(x in col_name.lower() for x in ['diện tích', 'area']) or 'ha' in s:
+            s = s.replace("ha", "").replace("hecta", "")
+        
+        # Tất cả: tách số
+        return self._extract_number(s) or 0
 
-    def _parse_area(self, val):
-        if pd.isna(val): return None
-        s = str(val).lower().replace("ha", "").replace("hecta", "")
-        return self._extract_number(s)
+    def _create_numeric_columns(self):
+        """Tạo cột số cho tất cả cột"""
+        for col in self.df.columns:
+            if col not in ['name_norm', 'type_norm', 'prov_norm']:
+                self.df[f"{col}_num"] = self.df[col].apply(lambda x: self._parse_smart(x, col))
+
+    def _get_numeric_column(self, col_name):
+        """Tìm cột số - logic thông minh hoàn toàn"""
+        # 1. Thử trực tiếp với tên cột
+        if f"{col_name}_num" in self.df.columns:
+            return f"{col_name}_num"
+        
+        # 2. Thử tìm cột tương tự (fuzzy matching)
+        for real_col in self.df.columns:
+            if col_name.lower() in real_col.lower() and f"{real_col}_num" in self.df.columns:
+                return f"{real_col}_num"
+        
+        # 3. Thử mapping ngược từ tên thân thiện sang tên thật
+        for key, real_col_name in self.cols.items():
+            if col_name.lower() == key.lower() and f"{real_col_name}_num" in self.df.columns:
+                return f"{real_col_name}_num"
+        
+        return None
 
     def _parse_general_number(self, val):
-        """Dùng cho các cột động (Mật độ, Tầng cao...)"""
+        """Dùng cho các cột động (Mật độ, Tầng cao...) - DEPRECATED, dùng _parse_smart"""
         if pd.isna(val): return 0
         s = str(val).lower()
         return self._extract_number(s) or 0
+
+    def search_single_zone(self, zone_name: str):
+        """Tìm kiếm 1 KCN/CCN cụ thể với logic thông minh"""
+        if self.df.empty:
+            return {"type": "error", "message": "Không có dữ liệu."}
+        
+        zone_name_norm = self._normalize(zone_name)
+        
+        # Tìm cột tên
+        name_col = None
+        for col in self.df.columns:
+            if any(keyword in col.lower() for keyword in ['tên', 'name']) and not col.endswith('_num'):
+                name_col = col
+                break
+        
+        if not name_col:
+            return {"type": "error", "message": "Không tìm thấy cột tên trong dữ liệu."}
+        
+        # 1. Tìm exact match (khớp hoàn toàn)
+        exact_matches = self.df[self.df['name_norm'] == zone_name_norm]
+        if len(exact_matches) == 1:
+            return {"type": "single_result", "data": self._clean_dict_for_json(exact_matches.iloc[0].to_dict())}
+        
+        # 2. Tìm partial match (chứa từ khóa)
+        partial_matches = self.df[self.df['name_norm'].str.contains(zone_name_norm, na=False)]
+        
+        if len(partial_matches) == 0:
+            return {"type": "not_found", "message": f"Không tìm thấy KCN/CCN nào có tên chứa '{zone_name}'."}
+        
+        elif len(partial_matches) == 1:
+            return {"type": "single_result", "data": partial_matches.iloc[0].to_dict()}
+        
+        else:
+            # 3. Nhiều kết quả - tạo danh sách lựa chọn
+            choices = []
+            for idx, row in partial_matches.head(10).iterrows():  # Tối đa 10 lựa chọn
+                # Tìm cột tỉnh
+                location = "Không rõ"
+                for col in self.df.columns:
+                    if any(keyword in col.lower() for keyword in ['tỉnh', 'thành phố', 'province']):
+                        location = str(row.get(col, "Không rõ"))
+                        break
+                
+                # Tìm cột loại
+                zone_type = "Không rõ"
+                for col in self.df.columns:
+                    if any(keyword in col.lower() for keyword in ['loại', 'type']):
+                        zone_type = str(row.get(col, "Không rõ"))
+                        break
+                
+                choices.append({
+                    "name": str(row.get(name_col, "")),
+                    "location": location,
+                    "type": zone_type,
+                    "coordinates": self.match_coordinates(str(row.get(name_col, ""))),
+                    "full_data": self._clean_dict_for_json(row.to_dict())
+                })
+            
+            return {
+                "type": "multiple_choices",
+                "message": f"Tìm thấy {len(partial_matches)} KCN/CCN có tên tương tự '{zone_name}'. Bạn đang tìm:",
+                "choices": choices,
+                "total_found": len(partial_matches)
+            }
 
     def match_coordinates(self, name: str):
         norm = self._normalize(name)
@@ -123,97 +274,154 @@ class IIPMapBackend:
             elif zone_type == "CCN":
                 df_res = df_res[df_res['type_norm'].str.contains("cụm|ccn|cluster", regex=True, na=False)]
 
-        # 2. LỌC SỐ HỌC (Numeric Filters)
-        numeric_filters = filters.get("numeric_filters", [])
-        for nf in numeric_filters:
-            metric = nf.get("col")
-            op = nf.get("op")
+        # 2. LỌC SỐ HỌC (Numeric Filters) - ĐƠN GIẢN
+        for nf in filters.get("numeric_filters", []):
+            col = nf.get("col")
+            op = nf.get("op") 
             val = float(nf.get("val", 0))
-
-            target_col = None
-            if metric == "price": target_col = 'price_num'
-            elif metric == "area": target_col = 'area_num'
             
-            if target_col:
-                if op == "<": df_res = df_res[df_res[target_col] < val]
-                elif op == ">": df_res = df_res[df_res[target_col] > val]
-                elif op == "<=": df_res = df_res[df_res[target_col] <= val]
-                elif op == ">=": df_res = df_res[df_res[target_col] >= val]
+            numeric_col = self._get_numeric_column(col)
+            if numeric_col and numeric_col in self.df.columns:
+                if op == "<": df_res = df_res[df_res[numeric_col] < val]
+                elif op == ">": df_res = df_res[df_res[numeric_col] > val]
+                elif op == "<=": df_res = df_res[df_res[numeric_col] <= val]
+                elif op == ">=": df_res = df_res[df_res[numeric_col] >= val]
 
-        # 3. LỌC CÁC CỘT KHÁC (Dynamic Text)
+        # 3. LỌC CÁC CỘT KHÁC - ĐƠN GIẢN
         for col, val in filters.items():
             if col in ["zone_type", "numeric_filters"]: continue
             
-            target_col = None
-            if col in self.df.columns:
-                target_col = col
-            else:
-                for real_col in self.df.columns:
-                    if col.lower() == real_col.lower():
-                        target_col = real_col
+            # Tìm cột thật
+            real_col = col if col in self.df.columns else None
+            if not real_col:
+                for c in self.df.columns:
+                    if col.lower() == c.lower():
+                        real_col = c
                         break
             
-            if target_col:
-                if target_col == self.cols['province']:
+            if real_col:
+                # Tự động nhận diện cột đặc biệt
+                if any(keyword in real_col.lower() for keyword in ['tỉnh', 'thành phố', 'province']):
                     df_res = df_res[df_res['prov_norm'].str.contains(self._normalize(val), na=False)]
-                elif target_col == self.cols['name']:
+                elif any(keyword in real_col.lower() for keyword in ['tên', 'name']) and not real_col.endswith('_num'):
                     df_res = df_res[df_res['name_norm'].str.contains(self._normalize(val), na=False)]
                 else:
-                    df_res = df_res[df_res[target_col].astype(str).str.contains(str(val), case=False, na=False)]
+                    df_res = df_res[df_res[real_col].astype(str).str.contains(str(val), case=False, na=False)]
 
         return df_res
 
-    def generate_chart_base64(self, df: pd.DataFrame, title: str, metric_col: str = "dual"):
+    def generate_chart_base64(self, df: pd.DataFrame, title: str, metric_col: str = "dual", limit: int = None):
         if df.empty: return None
         df_plot = df.copy()
         
-        # --- Logic Vẽ Biểu Đồ ---
+        # Xử lý limit
+        if limit == -1:
+            # -1 = unlimited, hiển thị tất cả
+            limit = len(df_plot)
+        elif limit is None:
+            # None = default 50 để tránh biểu đồ quá dài
+            limit = min(len(df_plot), 50)
+        
+        # --- Logic Vẽ Biểu Đồ CỘT (BAR CHART) ---
         if metric_col == 'dual':
-            df_plot = df_plot.sort_values(['price_num', 'area_num'], ascending=False).head(10)
-        elif metric_col == 'area':
-            df_plot = df_plot.sort_values('area_num', ascending=False).head(10)
-        elif metric_col == 'price':
-            df_plot = df_plot.sort_values('price_num', ascending=False).head(10)
-        else:
-            # --- VẼ BIỂU ĐỒ CỘT ĐỘNG (Bất kỳ cột nào) ---
-            real_col = None
-            for c in df.columns:
-                if metric_col.lower() == c.lower():
-                    real_col = c
+            # Dual chart: tự động tìm cột giá và diện tích
+            price_col = None
+            area_col = None
+            
+            # Tìm cột giá (có chứa từ khóa liên quan)
+            for col in df_plot.columns:
+                if any(keyword in col.lower() for keyword in ['giá', 'price', 'thuê']) and col.endswith('_num'):
+                    price_col = col
                     break
             
-            if real_col:
-                # Tự động parse số từ cột đó (VD: "60%" -> 60)
-                temp_col = f"_temp_{real_col}"
-                df_plot[temp_col] = df_plot[real_col].apply(self._parse_general_number)
-                df_plot = df_plot.sort_values(temp_col, ascending=False).head(10)
+            # Tìm cột diện tích (có chứa từ khóa liên quan)  
+            for col in df_plot.columns:
+                if any(keyword in col.lower() for keyword in ['diện tích', 'area', 'tổng']) and col.endswith('_num'):
+                    area_col = col
+                    break
+            
+            if price_col and area_col:
+                df_plot = df_plot.sort_values([price_col, area_col], ascending=False).head(limit)
+            elif price_col:
+                df_plot = df_plot.sort_values(price_col, ascending=False).head(limit)
+            elif area_col:
+                df_plot = df_plot.sort_values(area_col, ascending=False).head(limit)
+            else:
+                return None
+        else:
+            # Tìm cột số tương ứng
+            numeric_col = self._get_numeric_column(metric_col)
+            if numeric_col and numeric_col in df_plot.columns:
+                df_plot = df_plot.sort_values(numeric_col, ascending=False).head(limit)
             else:
                 return None
 
         df_plot = df_plot.iloc[::-1] # Đảo ngược để vẽ
-        names = df_plot[self.cols['name']].tolist()
         
-        plt.figure(figsize=(10, 6))
+        # Tự động tìm cột tên để làm label
+        name_col = None
+        for col in df_plot.columns:
+            if any(keyword in col.lower() for keyword in ['tên', 'name']) and not col.endswith('_num'):
+                name_col = col
+                break
         
+        if not name_col:
+            name_col = df_plot.columns[0]  # Fallback: dùng cột đầu tiên
+            
+        names = df_plot[name_col].tolist()
+        
+        # Điều chỉnh kích thước biểu đồ cho vertical bars (cột dọc)
+        width = max(12, len(names) * 0.6)  # Tăng chiều rộng theo số items
+        height = 8  # Chiều cao cố định
+        plt.figure(figsize=(width, height))
+        
+        # --- VẼ BIỂU ĐỒ CỘT ---
         if metric_col == 'dual':
-            prices = df_plot['price_num'].fillna(0).tolist()
-            plt.barh(names, prices, color='#1f77b4')
-            plt.xlabel("Giá thuê (USD/m²/năm)")
-        elif metric_col == 'area':
-            vals = df_plot['area_num'].fillna(0).tolist()
-            plt.barh(names, vals, color='#2ca02c')
-            plt.xlabel("Diện tích (ha)")
-        elif metric_col == 'price':
-            vals = df_plot['price_num'].fillna(0).tolist()
-            plt.barh(names, vals, color='#1f77b4')
-            plt.xlabel("Giá thuê (USD/m²/năm)")
+            # Tự động tìm cột giá để vẽ
+            price_col = None
+            for col in df_plot.columns:
+                if any(keyword in col.lower() for keyword in ['giá', 'price', 'thuê']) and col.endswith('_num'):
+                    price_col = col
+                    break
+            
+            if price_col and price_col in df_plot.columns:
+                vals = df_plot[price_col].fillna(0).tolist()
+                bars = plt.bar(names, vals, color='#1f77b4')
+                plt.ylabel("Giá thuê (USD/m²/năm)")
+                # Thêm giá trị lên đầu mỗi cột
+                for bar, val in zip(bars, vals):
+                    if val > 0:
+                        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(vals)*0.01, 
+                                f'{val:.0f}', ha='center', va='bottom', fontsize=8)
         else:
-            # Vẽ cột động
-            vals = df_plot[f"_temp_{real_col}"].fillna(0).tolist()
-            plt.barh(names, vals, color='#ff7f0e') # Màu cam
-            plt.xlabel(f"{real_col} (Số liệu)")
+            # Vẽ biểu đồ cho bất kỳ cột nào
+            numeric_col = self._get_numeric_column(metric_col)
+            if numeric_col in df_plot.columns:
+                vals = df_plot[numeric_col].fillna(0).tolist()
+                
+                # Chọn màu dựa trên loại dữ liệu
+                color = '#2ca02c' if 'diện tích' in metric_col.lower() or 'area' in metric_col.lower() else \
+                        '#1f77b4' if 'giá' in metric_col.lower() or 'price' in metric_col.lower() else \
+                        '#ff7f0e'
+                
+                bars = plt.bar(names, vals, color=color)
+                plt.ylabel(f"{metric_col} (Số liệu)")
+                
+                # Thêm giá trị lên đầu mỗi cột
+                for bar, val in zip(bars, vals):
+                    if val > 0:
+                        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(vals)*0.01, 
+                                f'{val:.1f}', ha='center', va='bottom', fontsize=8)
 
-        plt.title(title, fontsize=12, fontweight='bold')
+        plt.title(f"{title} ({len(names)} kết quả)", fontsize=14, fontweight='bold')
+        
+        # Xoay labels để tránh chồng chéo và cải thiện hiển thị
+        plt.xticks(rotation=90, ha='center', fontsize=9)
+        plt.xlabel("Khu công nghiệp", fontsize=12)
+        
+        # Thêm grid để dễ đọc
+        plt.grid(axis='y', alpha=0.3)
+        
         plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
@@ -221,3 +429,4 @@ class IIPMapBackend:
         b64 = base64.b64encode(buf.read()).decode('utf-8')
         plt.close()
         return b64
+
