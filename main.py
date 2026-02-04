@@ -211,14 +211,11 @@ async def predict(data: Question, request: Request):
                     hm = app.get_history(session)
                     chat_history = hm.messages[-6:] if hm.messages else []
 
-                # GỌI AGENT với timeout
+                # GỌI AGENT
                 import asyncio
-                iz_result = await asyncio.wait_for(
-                    run_in_threadpool(
-                        iz_executor.invoke,
-                        {"input": question, "chat_history": chat_history}
-                    ),
-                    timeout=180.0  # Tăng từ 25 lên 180 giây (3 phút)
+                iz_result = await run_in_threadpool(
+                    iz_executor.invoke,
+                    {"input": question, "chat_history": chat_history}
                 )
 
                 final_output = iz_result.get("output", "")
@@ -325,13 +322,6 @@ async def predict(data: Question, request: Request):
                 
                 return {"answer": final_output, "type": "text", "session_id": session}
 
-            except asyncio.TimeoutError:
-                print(f"⏰ IZ Agent Timeout: Câu hỏi quá phức tạp, vượt quá 180 giây (3 phút)")
-                return {
-                    "answer": "Xin lỗi, câu hỏi của bạn quá phức tạp và mất nhiều thời gian xử lý (hơn 3 phút). Vui lòng thử lại với câu hỏi đơn giản hơn.",
-                    "type": "text",
-                    "session_id": session
-                }
             except Exception as e:
                 print(f"❌ IZ Agent Error: {e}")
                 return {

@@ -21,14 +21,12 @@ if not MY_API_KEY:
     print("❌ LỖI: Chưa cấu hình OPENAI_API_KEY")
     sys.exit(1)
 
-# Load danh sách cột (Cắt bớt nếu quá dài để tiết kiệm Token)
+# Load danh sách cột (Hiển thị toàn bộ cột)
 try:
     temp_backend = IIPMapBackend(EXCEL_PATH, GEOJSON_PATH)
     full_cols = temp_backend.get_all_columns()
-    # Chỉ lấy 20 cột đầu tiên để tránh tràn Token và rate limit
-    ALL_COLUMNS = ", ".join(full_cols[:20]) 
-    if len(full_cols) > 20:
-        ALL_COLUMNS += "..."
+    # Hiển thị toàn bộ cột
+    ALL_COLUMNS = ", ".join(full_cols)
 except Exception as e:
     ALL_COLUMNS = "Tên, Tỉnh/Thành phố, Giá thuê đất, Tổng diện tích..."
 
@@ -88,18 +86,14 @@ llm = ChatOpenAI(
     model="gpt-4o-mini", 
     temperature=0, 
     openai_api_key=MY_API_KEY,
-    max_retries=3, # Tăng từ 2 lên 3
-    request_timeout=60 # Tăng từ 15 lên 60 giây
+    max_retries=3
 )
 
 agent = create_openai_functions_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(
     agent=agent, 
     tools=tools, 
-    verbose=True,
-    max_execution_time=120,  # Tăng từ 20 lên 120 giây (2 phút)
-    max_iterations=5,        # Tăng từ 3 lên 5 lần thử
-    early_stopping_method="generate"
+    verbose=True
 )
 
 def run():
