@@ -207,6 +207,7 @@ async def predict(data: Question, request: Request):
             try:
                 # Lấy lịch sử
                 chat_history = []
+                hm = None
                 if hasattr(app, 'get_history'):
                     hm = app.get_history(session)
                     chat_history = hm.messages[-6:] if hm.messages else []
@@ -255,7 +256,7 @@ async def predict(data: Question, request: Request):
                             break
                 
                 # Lưu lịch sử chat
-                if hasattr(app, 'get_history'):
+                if hasattr(app, 'get_history') and hm is not None:
                     hm.add_user_message(question)
                     hm.add_ai_message(final_output)
 
