@@ -10,7 +10,7 @@ load_dotenv(override=True)
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.runnables import RunnableLambda
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from user_history.langchain_history import SupabaseChatMessageHistory
+# from user_history.langchain_history import SupabaseChatMessageHistory  # Tạm thời disable
 
 from pinecone import Pinecone as PineconeClient
 from langchain_pinecone import Pinecone
@@ -159,13 +159,12 @@ def pdf_dispatch(i: Dict):
 pdf_chain = RunnableLambda(pdf_dispatch)
 
 def get_history(session_id: str):
-    try:
-        return SupabaseChatMessageHistory(session_id=session_id, limit=40)
-    except Exception as e:
-        print(f"⚠️ Database connection error: {e}")
-        # Fallback to in-memory history
-        from langchain_core.chat_history import InMemoryChatMessageHistory
-        return InMemoryChatMessageHistory()
+    # Tạm thời disable database để tránh lỗi connection pool
+    # return SupabaseChatMessageHistory(session_id=session_id, limit=40)
+    
+    # Dùng memory thay vì database
+    from langchain_core.chat_history import InMemoryChatMessageHistory
+    return InMemoryChatMessageHistory()
 
 chatbot = RunnableWithMessageHistory(
     pdf_chain,
