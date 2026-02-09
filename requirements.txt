@@ -1,28 +1,48 @@
-python-dotenv==1.1.1
-chromadb==1.1.0
-langchain==0.3.27
-langchain-core==0.3.78
-langchain-openai==0.3.33
-langchain-community==0.3.29
-langchain-chroma==0.2.6
-pypdf==5.1.0
-Flask==3.1.2
-flask-cors == 6.0.1
-fastapi == 0.118.0
-langchain-pinecone == 0.2.12
-pinecone == 7.3.0
-gspread == 6.2.1
-uvicorn == 0.37.0
-starlette == 0.48.0
-pydantic == 2.11.9
-google-auth == 2.40.3
-psycopg2-binary == 2.9.11
-pandas == 2.3.2
-openpyxl == 3.1.5
-langdetect == 1.0.9
-matplotlib == 3.10.8
-pytz == 2025.2
-pathlib == 1.0.1
-sqlalchemy>=2.0.0
-qdrant-client==1.9.1
-langchain-qdrant
+# Python 3.11 Compatible Requirements
+# Core Framework
+python-dotenv==1.0.1
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.3
+starlette==0.27.0
+
+# LangChain Ecosystem (Python 3.11 Compatible)
+langchain==0.1.20
+langchain-core==0.1.52
+langchain-openai==0.1.8
+langchain-community==0.0.38
+langchain-chroma==0.1.1
+langchain-pinecone==0.1.1
+langchain-qdrant==0.1.1
+
+# Vector Databases
+pinecone-client==3.2.2
+chromadb==0.4.24
+qdrant-client==1.7.3
+
+# AI/ML Libraries
+openai==1.12.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.4
+openpyxl==3.1.2
+pypdf==4.2.0
+matplotlib==3.8.4
+pytz==2024.1
+
+# Database
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+
+# Utilities
+langdetect==1.0.9
+google-auth==2.27.0
+gspread==6.0.2
+
+# Web (Optional)
+Flask==3.0.2
+flask-cors==4.0.0
+
+# Development
+requests==2.31.0
