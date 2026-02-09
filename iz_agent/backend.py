@@ -168,19 +168,46 @@ class IIPMapBackend:
                 self.df[f"{col}_num"] = self.df[col].apply(lambda x: self._parse_smart(x, col))
 
     def _get_numeric_column(self, col_name):
-        """Tìm cột số - logic thông minh hoàn toàn"""
+        """Tìm cột số - logic thông minh với ưu tiên từ khóa"""
+        col_name_lower = col_name.lower()
+        
         # 1. Thử trực tiếp với tên cột
         if f"{col_name}_num" in self.df.columns:
             return f"{col_name}_num"
         
-        # 2. Thử tìm cột tương tự (fuzzy matching)
+        # 2. Ưu tiên tìm cột chính xác với từ khóa đặc biệt
+        # Tránh nhầm lẫn giữa "hệ số sử dụng đất" và "diện tích"
+        priority_keywords = {
+            'lấp đầy': ['lấp đầy', 'occupancy'],
+            'sử dụng': ['sử dụng đất', 'sử dụng', 'utilization'],
+            'hệ số': ['hệ số', 'tỷ lệ', 'ratio'],
+            'diện tích': ['diện tích', 'area'],
+            'giá': ['giá', 'price'],
+        }
+        
+        # Tìm nhóm từ khóa phù hợp
+        for group_key, keywords in priority_keywords.items():
+            if any(kw in col_name_lower for kw in keywords):
+                # Tìm cột có chứa từ khóa này
+                for real_col in self.df.columns:
+                    real_col_lower = real_col.lower()
+                    # Kiểm tra cột có chứa từ khóa và có _num
+                    if any(kw in real_col_lower for kw in keywords) and f"{real_col}_num" in self.df.columns:
+                        # Đảm bảo không nhầm lẫn (vd: "sử dụng đất" không match với "diện tích")
+                        if group_key == 'sử dụng' and 'diện tích' in real_col_lower:
+                            continue
+                        if group_key == 'diện tích' and any(x in real_col_lower for x in ['lấp đầy', 'sử dụng', 'occupancy']):
+                            continue
+                        return f"{real_col}_num"
+        
+        # 3. Thử tìm cột tương tự (fuzzy matching - fallback)
         for real_col in self.df.columns:
-            if col_name.lower() in real_col.lower() and f"{real_col}_num" in self.df.columns:
+            if col_name_lower in real_col.lower() and f"{real_col}_num" in self.df.columns:
                 return f"{real_col}_num"
         
-        # 3. Thử mapping ngược từ tên thân thiện sang tên thật
+        # 4. Thử mapping ngược từ tên thân thiện sang tên thật
         for key, real_col_name in self.cols.items():
-            if col_name.lower() == key.lower() and f"{real_col_name}_num" in self.df.columns:
+            if col_name_lower == key.lower() and f"{real_col_name}_num" in self.df.columns:
                 return f"{real_col_name}_num"
         
         return None
@@ -336,9 +363,11 @@ class IIPMapBackend:
             
             # Tìm cột diện tích (có chứa từ khóa liên quan)  
             for col in df_plot.columns:
-                if any(keyword in col.lower() for keyword in ['diện tích', 'area', 'tổng']) and col.endswith('_num'):
-                    area_col = col
-                    break
+                if any(keyword in col.lower() for keyword in ['diện tích', 'area']) and col.endswith('_num'):
+                    # Loại trừ các cột về tỷ lệ/hệ số
+                    if not any(exclude in col.lower() for exclude in ['lấp đầy', 'sử dụng', 'occupancy', 'tỷ lệ', 'hệ số']):
+                        area_col = col
+                        break
             
             if price_col and area_col:
                 df_plot = df_plot.sort_values([price_col, area_col], ascending=False).head(limit)
@@ -400,9 +429,14 @@ class IIPMapBackend:
                 vals = df_plot[numeric_col].fillna(0).tolist()
                 
                 # Chọn màu dựa trên loại dữ liệu
-                color = '#2ca02c' if 'diện tích' in metric_col.lower() or 'area' in metric_col.lower() else \
-                        '#1f77b4' if 'giá' in metric_col.lower() or 'price' in metric_col.lower() else \
-                        '#ff7f0e'
+                if any(keyword in metric_col.lower() for keyword in ['lấp đầy', 'sử dụng', 'occupancy', 'tỷ lệ', 'hệ số']):
+                    color = '#ff7f0e'  # Cam cho hệ số/tỷ lệ
+                elif any(keyword in metric_col.lower() for keyword in ['diện tích', 'area']):
+                    color = '#2ca02c'  # Xanh lá cho diện tích
+                elif any(keyword in metric_col.lower() for keyword in ['giá', 'price']):
+                    color = '#1f77b4'  # Xanh dương cho giá
+                else:
+                    color = '#ff7f0e'  # Cam mặc định
                 
                 bars = plt.bar(names, vals, color=color)
                 plt.ylabel(f"{metric_col} (Số liệu)")

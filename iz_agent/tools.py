@@ -177,16 +177,32 @@ def search_flexible_tool(filter_json: str, view_option: str = "list"):
     chart_id = None
     chart_type = "none"
     
+    print(f"🎨 view_option: {view_option}")
+    
     if view_option != "list":
         metric = 'dual'  # Giữ dual cho tương thích ngược
         if view_option.startswith('chart_'): 
             metric = view_option.replace("chart_", "")
             chart_type = "bar"
+            
+            # ✅ MAP TIẾNG ANH → TIẾNG VIỆT
+            metric_mapping = {
+                'occupancy': 'Hệ số sử dụng đất',
+                'area': 'Tổng diện tích',
+                'price': 'Giá thuê đất'
+            }
+            
+            if metric in metric_mapping:
+                metric = metric_mapping[metric]
+                print(f"🎨 Mapped metric: {metric}")
         
+        print(f"🎨 Creating chart with metric: {metric}")
         title = f"BIỂU ĐỒ {metric.upper()} - {prov_str}"
         
         # Vẽ ảnh với tất cả dữ liệu (KHÔNG GIỚI HẠN cho biểu đồ)
         base64_str = backend.generate_chart_base64(df_res, title, metric, limit=-1)  # -1 = unlimited
+        
+        print(f"🎨 Chart generated: {bool(base64_str)}, length: {len(base64_str) if base64_str else 0}")
         
         if base64_str:
             # ✅ BƯỚC QUAN TRỌNG: 
@@ -194,6 +210,11 @@ def search_flexible_tool(filter_json: str, view_option: str = "list"):
             # - Cất ảnh vào kho CHART_STORE
             chart_id = str(uuid.uuid4())
             CHART_STORE[chart_id] = base64_str
+            print(f"✅ Chart stored with ID: {chart_id}")
+        else:
+            print(f"⚠️ Chart generation returned None!")
+    else:
+        print(f"⚠️ view_option is 'list', skipping chart generation")
 
     # 3. TRẢ VỀ CHO AI (Gói tin siêu nhẹ - Không có Base64)
     total_found = len(df_res)
