@@ -218,17 +218,24 @@ async def predict(data: Question, request: Request):
                             
                             # ✅ CHECK: Có vé (chart_id) không?
                             chart_id = tool_payload.get("chart_id")
+                            print(f"🔍 chart_id from tool: {chart_id}")
+                            print(f"🔍 CHART_STORE keys: {list(CHART_STORE.keys())}")
                             
                             if chart_id and chart_id in CHART_STORE:
                                 # ✅ LẤY ẢNH THẬT TỪ KHO RA
                                 print(f"📸 Đang lấy ảnh từ kho (ID: {chart_id})...")
                                 real_base64 = CHART_STORE[chart_id]
+                                print(f"✅ Đã lấy ảnh, length: {len(real_base64)}")
                                 
                                 # Gán vào payload để trả về cho Frontend/Postman
                                 tool_payload["chart_base64"] = real_base64
                                 
                                 # (Tùy chọn) Xóa khỏi kho để giải phóng RAM sau khi dùng xong
                                 # del CHART_STORE[chart_id]
+                            else:
+                                print(f"⚠️ Không tìm thấy chart_id trong CHART_STORE!")
+                                print(f"   chart_id: {chart_id}")
+                                print(f"   chart_id in CHART_STORE: {chart_id in CHART_STORE if chart_id else False}")
                             break
                         
                         # Xử lý single zone tool (có coordinates)

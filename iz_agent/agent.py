@@ -69,7 +69,18 @@ CÁCH CHỌN TOOL:
 PARAMETERS:
 search_flexible_tool:
 1. filter_json: Map câu hỏi thành JSON string với zone_type tự động
-2. view_option: "list" (mặc định), "chart_price", "chart_area"
+2. view_option: 
+   - "list" (mặc định - chỉ danh sách)
+   - "chart_price" (biểu đồ giá thuê)
+   - "chart_area" (biểu đồ diện tích)
+   - "chart_occupancy" (biểu đồ tỷ lệ lấp đầy / hệ số sử dụng đất)
+   - "chart_<tên_cột>" (biểu đồ bất kỳ cột nào)
+
+QUAN TRỌNG - PHÂN BIỆT CÁC LOẠI BIỂU ĐỒ:
+- "hệ số sử dụng đất", "tỷ lệ lấp đầy", "occupancy" → view_option: "chart_occupancy"
+- "diện tích", "area" → view_option: "chart_area"
+- "giá thuê", "price" → view_option: "chart_price"
+- KHÔNG ĐƯỢC nhầm lẫn giữa "hệ số sử dụng đất" và "diện tích"!
 
 Hãy trả lời ngắn gọn, súc tích.
 """
