@@ -12,8 +12,13 @@ from langchain_core.runnables import RunnableLambda
 from langchain_core.runnables.history import RunnableWithMessageHistory
 # from user_history.langchain_history import SupabaseChatMessageHistory  # Tạm thời disable
 
-from pinecone import Pinecone as PineconeClient
-from langchain_pinecone import Pinecone
+# PINECONE (COMMENTED - Chuyển sang Qdrant cho Luật)
+# from pinecone import Pinecone as PineconeClient
+# from langchain_pinecone import Pinecone
+
+# QDRANT (Cho Luật)
+from qdrant_client import QdrantClient
+from langchain_qdrant import QdrantVectorStore
 
 from data_processing.pipeline import process_pdf_question
 from law_db_query.handler import handle_law_article_query, handle_law_count_query
@@ -29,20 +34,27 @@ OPENAI__EMBEDDING_MODEL = os.getenv("OPENAI__EMBEDDING_MODEL")
 OPENAI__MODEL_NAME = os.getenv("OPENAI__MODEL_NAME")
 OPENAI__TEMPERATURE = os.getenv("OPENAI__TEMPERATURE")
 LANG_MODEL_API_KEY = os.getenv("LANG_MODEL_API_KEY")
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
+
+# PINECONE (COMMENTED)
+# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
+
+# QDRANT (MỚI)
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_COLLECTION_NAME_LAW = os.getenv("QDRANT_COLLECTION_NAME_LAW", "law_data")
+
 EMBEDDING_DIM = 3072
 
 # ===================== INIT LLM =====================
 llm = ChatOpenAI(
     api_key=OPENAI__API_KEY,
-    model_name=OPENAI__MODEL_NAME,
+    model=OPENAI__MODEL_NAME,
     temperature=float(OPENAI__TEMPERATURE) if OPENAI__TEMPERATURE else 0
 )
 
 lang_llm = ChatOpenAI(
     api_key=LANG_MODEL_API_KEY,
-    model_name="gpt-4o-mini",
+    model="gpt-4o-mini",
     temperature=0
 )
 
@@ -52,35 +64,94 @@ emb = OpenAIEmbeddings(
     model=OPENAI__EMBEDDING_MODEL
 )
 
-# ===================== INIT PINECONE =====================
-if not PINECONE_API_KEY:
-    print("Thiếu PINECONE_API_KEY")
-    sys.exit(1)
+# ===================== INIT PINECONE (COMMENTED) =====================
+# if not PINECONE_API_KEY:
+#     print("Thiếu PINECONE_API_KEY")
+#     sys.exit(1)
+# 
+# pc = PineconeClient(api_key=PINECONE_API_KEY)
+# vectordb = None
+# retriever = None
+# retriever_vsic_2018 = None
+# 
+# def load_vectordb():
+#     global vectordb, retriever, retriever_vsic_2018
+#     
+#     # ===== VSIC 2025 (hiện hành) =====
+#     if PINECONE_INDEX_NAME not in pc.list_indexes().names():
+#         print(f"❌ Pinecone index '{PINECONE_INDEX_NAME}' không tồn tại")
+#         return None
+#     
+#     index = pc.Index(PINECONE_INDEX_NAME)
+#     stats = index.describe_index_stats()
+#     
+#     if stats["total_vector_count"] == 0:
+#         print("❌ Pinecone index rỗng")
+#         return None
+#     
+#     vectordb = Pinecone(index=index, embedding=emb, text_key="text")
+#     retriever = vectordb.as_retriever(search_kwargs={"k": 4})
+#     
+#     # ===== VSIC 2018 (đối chứng) =====
+#     try:
+#         retriever_vsic_2018 = load_vsic_2018_retriever(emb)
+#         print("✅ VSIC 2018 retriever sẵn sàng")
+#     except Exception as e:
+#         retriever_vsic_2018 = None
+#         print(f"⚠️ Không load được VSIC 2018: {e}")
+#     
+#     return vectordb
+# 
+# def get_vectordb_stats() -> Dict:
+#     try:
+#         index = pc.Index(PINECONE_INDEX_NAME)
+#         stats = index.describe_index_stats()
+#         return {
+#             "exists": stats["total_vector_count"] > 0,
+#             "total_documents": stats["total_vector_count"],
+#             "dimension": stats.get("dimension", EMBEDDING_DIM)
+#         }
+#     except Exception as e:
+#         return {"exists": False, "error": str(e)}
 
-pc = PineconeClient(api_key=PINECONE_API_KEY)
-vectordb = None
+# ===================== INIT QDRANT (MỚI) =====================
 retriever = None
 retriever_vsic_2018 = None
 
 def load_vectordb():
-    global vectordb, retriever, retriever_vsic_2018
+    global retriever, retriever_vsic_2018
     
-    # ===== VSIC 2025 (hiện hành) =====
-    if PINECONE_INDEX_NAME not in pc.list_indexes().names():
-        print(f"❌ Pinecone index '{PINECONE_INDEX_NAME}' không tồn tại")
+    # ===== LUẬT (Qdrant) =====
+    if not QDRANT_URL:
+        print("⚠️ Thiếu QDRANT_URL trong biến môi trường")
         return None
-    
-    index = pc.Index(PINECONE_INDEX_NAME)
-    stats = index.describe_index_stats()
-    
-    if stats["total_vector_count"] == 0:
-        print("❌ Pinecone index rỗng")
+
+    try:
+        client = QdrantClient(
+            url=QDRANT_URL, 
+            api_key=None, 
+            timeout=60, 
+            prefer_grpc=False,  # Dùng HTTP thay vì gRPC
+            check_compatibility=False
+        )
+    except Exception as e:
+        print(f"❌ Lỗi kết nối Qdrant: {e}")
         return None
-    
-    vectordb = Pinecone(index=index, embedding=emb, text_key="text")
+
+    if not client.collection_exists(QDRANT_COLLECTION_NAME_LAW):
+        print(f"⚠️ Collection '{QDRANT_COLLECTION_NAME_LAW}' chưa tồn tại trên Qdrant.")
+        return None
+
+    vectordb = QdrantVectorStore(
+        client=client,
+        collection_name=QDRANT_COLLECTION_NAME_LAW,
+        embedding=emb,
+    )
+
     retriever = vectordb.as_retriever(search_kwargs={"k": 4})
+    print("✅ Qdrant Law retriever sẵn sàng")
     
-    # ===== VSIC 2018 (đối chứng) =====
+    # ===== VSIC 2018 (đối chứng - vẫn dùng Pinecone) =====
     try:
         retriever_vsic_2018 = load_vsic_2018_retriever(emb)
         print("✅ VSIC 2018 retriever sẵn sàng")
@@ -88,16 +159,31 @@ def load_vectordb():
         retriever_vsic_2018 = None
         print(f"⚠️ Không load được VSIC 2018: {e}")
     
-    return vectordb
+    return retriever
 
 def get_vectordb_stats() -> Dict:
+    """Kiểm tra trạng thái Qdrant"""
     try:
-        index = pc.Index(PINECONE_INDEX_NAME)
-        stats = index.describe_index_stats()
+        if not QDRANT_URL:
+            return {"exists": False, "error": "Thiếu QDRANT_URL"}
+        
+        client = QdrantClient(
+            url=QDRANT_URL, 
+            api_key=None, 
+            timeout=60, 
+            prefer_grpc=False,
+            check_compatibility=False
+        )
+        
+        if not client.collection_exists(QDRANT_COLLECTION_NAME_LAW):
+            return {"exists": False, "error": f"Collection '{QDRANT_COLLECTION_NAME_LAW}' không tồn tại"}
+        
+        collection_info = client.get_collection(QDRANT_COLLECTION_NAME_LAW)
+        
         return {
-            "exists": stats["total_vector_count"] > 0,
-            "total_documents": stats["total_vector_count"],
-            "dimension": stats.get("dimension", EMBEDDING_DIM)
+            "exists": True,
+            "total_documents": collection_info.points_count,
+            "dimension": collection_info.config.params.vectors.size
         }
     except Exception as e:
         return {"exists": False, "error": str(e)}
@@ -180,7 +266,7 @@ def print_help():
     print("=" * 60)
     print("  - exit / quit  : Thoát")
     print("  - clear        : Xóa lịch sử hội thoại")
-    print("  - status       : Trạng thái Pinecone")
+    print("  - status       : Trạng thái Qdrant")
     print("  - help         : Hướng dẫn")
     print("=" * 60 + "\n")
 
@@ -197,11 +283,11 @@ def handle_command(command: str, session: str) -> bool:
         stats = get_vectordb_stats()
         print("\n" + "=" * 60)
         if stats.get("exists"):
-            print("✅ Pinecone sẵn sàng")
+            print("✅ Qdrant sẵn sàng")
             print(f"📄 Documents: {stats['total_documents']}")
             print(f"📐 Dimension: {stats['dimension']}")
         else:
-            print("❌ Pinecone chưa sẵn sàng")
+            print("❌ Qdrant chưa sẵn sàng")
             if "error" in stats:
                 print(f"🔥 {stats['error']}")
         print("=" * 60 + "\n")
@@ -215,23 +301,31 @@ def handle_command(command: str, session: str) -> bool:
 if __name__ == "__main__":
     session = "user_session_v1"
     
-    # Kiểm tra biến môi trường cơ bản (bỏ qua check excel path ở đây vì iz_agent tự lo)
-    if not all([OPENAI__API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME]):
-        print("❌ Thiếu biến môi trường bắt buộc (OpenAI/Pinecone)")
+    # Kiểm tra biến môi trường cơ bản
+    if not all([OPENAI__API_KEY, QDRANT_URL]):
+        print("❌ Thiếu biến môi trường bắt buộc (OpenAI/Qdrant)")
         sys.exit(1)
     
     print("\n" + "=" * 80)
     print("🤖 HỆ THỐNG TRỢ LÝ ẢO TỔNG HỢP")
     print("   (Hỗ trợ: KCN/CCN, Luật, PDF, Mã số thuế)")
+    print("   [Sử dụng Qdrant cho Luật]")
     print("=" * 80)
     print_help()
     
-    print("🔄 Đang kết nối Pinecone...")
+    print("🔄 Đang kết nối Qdrant...")
     if load_vectordb() is None:
+        print("⚠️ Không thể kết nối Qdrant. Kiểm tra:")
+        print(f"   - Qdrant URL: {QDRANT_URL}")
+        print(f"   - Collection: {QDRANT_COLLECTION_NAME_LAW}")
+        print(f"   - Dashboard: {QDRANT_URL}/dashboard")
         sys.exit(1)
     
     stats = get_vectordb_stats()
-    print(f"✅ VectorDB sẵn sàng ({stats['total_documents']} documents)\n")
+    if stats.get("exists"):
+        print(f"✅ VectorDB sẵn sàng ({stats['total_documents']} documents)\n")
+    else:
+        print(f"⚠️ VectorDB có vấn đề: {stats.get('error', 'Unknown')}\n")
     
     while True:
         try:
@@ -318,12 +412,19 @@ if __name__ == "__main__":
             # ==================================================================
             # 5. FALLBACK (PDF RAG / CHAT CHUNG)
             # ==================================================================
-            response = chatbot.invoke(
-                {"message": message},
-                config={"configurable": {"session_id": session}}
-            )
-            print(f"\n🤖 Bot: {response}\n")
-            print("-" * 80)
+            try:
+                response = chatbot.invoke(
+                    {"message": message},
+                    config={"configurable": {"session_id": session}}
+                )
+                print(f"\n🤖 Bot: {response}\n")
+                print("-" * 80)
+            except Exception as e:
+                print(f"\n🔥 Lỗi chatbot: {e}")
+                print(f"   Type: {type(e).__name__}")
+                import traceback
+                traceback.print_exc()
+                print("-" * 80)
             
         except KeyboardInterrupt:
             print("\n👋 Tạm biệt!")
