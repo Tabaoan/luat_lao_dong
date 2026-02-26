@@ -155,11 +155,9 @@ async def home():
 async def predict(data: Question, request: Request):
     question = (data.question or "").strip()
     if not question:
-        raise HTTPException(status_code=400, detail="Câu hỏi bị rỗng.")
+        return {"answer": "Câu hỏi bị rỗng.", "error": True}
 
     try:
-        answer: Optional[str] = None
-        requires_contact = False
 
         # ===============================
         # 0️⃣ LAW COUNT – SQL FIRST
@@ -167,20 +165,21 @@ async def predict(data: Question, request: Request):
         payload = handle_law_count_query(question)
         if isinstance(payload, dict) and payload.get("intent") == "law_count":
             if not CHATBOT_AVAILABLE:
-                return {"answer": "Backend chưa sẵn sàng."}
+                return {"answer": "Backend chưa sẵn sàng.", "error": True}
 
             response = await run_in_threadpool(
                 app.chatbot.invoke,
                 {"message": question, "law_count": payload["total_laws"]}
             )
-            return {"answer": response, "requires_contact": False}
+            
+            return {"answer": response}
 
         # ===============================
         # 1️⃣ MST INTENT (Tra cứu Mã số thuế)
         # ===============================
         if is_mst_query(question):
             if not CHATBOT_AVAILABLE:
-                return {"answer": "Backend chưa sẵn sàng."}
+                return {"answer": "Backend chưa sẵn sàng.", "error": True}
 
             mst_answer = await run_in_threadpool(
                 handle_mst_query,
@@ -188,23 +187,19 @@ async def predict(data: Question, request: Request):
                 llm=app.llm,
                 embedding=app.emb
             )
-            return {"answer": mst_answer, "requires_contact": False}
-# ===============================
+            return {"answer": mst_answer}
+        # ===============================
         # 2️⃣ IZ AGENT (XỬ LÝ ẢNH THÔNG MINH)
         # ===============================
         if IZ_AGENT_AVAILABLE and is_iz_agent_query(question):
             try:
                 # GỌI AGENT (không cần lịch sử chat)
-                import asyncio
                 iz_result = await run_in_threadpool(
                     iz_executor.invoke,
                     {"input": question, "chat_history": []}
                 )
 
                 final_output = iz_result.get("output", "")
-                
-                # --- [QUAN TRỌNG] TÌM VÉ (ID) VÀ ĐỔI LẤY ẢNH THẬT ---
-                tool_payload = None
                 
                 # Duyệt qua các bước chạy của Tool
                 for action, output in iz_result.get("intermediate_steps", []):
@@ -213,103 +208,53 @@ async def predict(data: Question, request: Request):
                         
                         # Xử lý flexible search tool (có biểu đồ)
                         if output_type == "excel_visualize_with_data":
-                            tool_payload = output
-                            tool_payload["text"] = final_output
-                            
-                            # ✅ CHECK: Có vé (chart_id) không?
-                            chart_id = tool_payload.get("chart_id")
-                            print(f"🔍 chart_id from tool: {chart_id}")
-                            print(f"🔍 CHART_STORE keys: {list(CHART_STORE.keys())}")
+                            chart_id = output.get("chart_id")
                             
                             if chart_id and chart_id in CHART_STORE:
-                                # ✅ LẤY ẢNH THẬT TỪ KHO RA
-                                print(f"📸 Đang lấy ảnh từ kho (ID: {chart_id})...")
                                 real_base64 = CHART_STORE[chart_id]
-                                print(f"✅ Đã lấy ảnh, length: {len(real_base64)}")
-                                
-                                # Gán vào payload để trả về cho Frontend/Postman
-                                tool_payload["chart_base64"] = real_base64
-                                
-                                # (Tùy chọn) Xóa khỏi kho để giải phóng RAM sau khi dùng xong
-                                # del CHART_STORE[chart_id]
-                            else:
-                                print(f"⚠️ Không tìm thấy chart_id trong CHART_STORE!")
-                                print(f"   chart_id: {chart_id}")
-                                print(f"   chart_id in CHART_STORE: {chart_id in CHART_STORE if chart_id else False}")
-                            break
+                                output["chart_base64"] = real_base64
+                            
+                            # Trả về answer + chart base64 + data
+                            return {
+                                "answer": final_output,
+                                "chart_base64": output.get("chart_base64"),
+                                "data": output.get("data", []),
+                                "province": output.get("province"),
+                                "count": output.get("count"),
+                                "total_found": output.get("total_found")
+                            }
                         
                         # Xử lý single zone tool (có coordinates)
-                        elif output_type in ["single_zone_info", "multiple_choices", "error"]:
-                            tool_payload = output
-                            tool_payload["text"] = final_output
-                            break
+                        elif output_type == "single_zone_info":
+                            return {
+                                "answer": final_output,
+                                "zone_data": output.get("data", {}),
+                                "coordinates": output.get("coordinates")
+                            }
+                        
+                        # Xử lý multiple choices
+                        elif output_type == "multiple_choices":
+                            return {
+                                "answer": output.get("message", final_output),
+                                "choices": output.get("choices", []),
+                                "total_found": output.get("total_found")
+                            }
+                        
+                        # Xử lý error
+                        elif output_type == "error":
+                            return {
+                                "answer": output.get("message", "Đã xảy ra lỗi"),
+                                "error": True
+                            }
                 
-                # Không cần lưu lịch sử chat nữa
-
-                # TRẢ VỀ CHO POSTMAN
-                if tool_payload:
-                    payload_type = tool_payload.get("type")
-                    
-                    # Làm sạch payload trước khi trả về
-                    import json
-                    import math
-                    import pandas as pd
-                    
-                    def clean_for_json(obj):
-                        if isinstance(obj, dict):
-                            return {k: clean_for_json(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            return [clean_for_json(item) for item in obj]
-                        elif isinstance(obj, float):
-                            if math.isnan(obj) or math.isinf(obj):
-                                return None
-                        elif pd.isna(obj):
-                            return None
-                        elif isinstance(obj, str) and obj.lower() in ['nan', 'inf', '-inf']:
-                            return None
-                        return obj
-                    
-                    clean_payload = clean_for_json(tool_payload)
-                    
-                    # Cắt log để server không lag khi print
-                    debug_payload = clean_payload.copy()
-                    if "chart_base64" in debug_payload and debug_payload["chart_base64"]:
-                        debug_payload["chart_base64"] = "✅ [IMAGE DATA EXISTS - HIDDEN FROM LOG]"
-                    
-                    print(f"🚀 Response sent to Client: {json.dumps(debug_payload, ensure_ascii=False)}")
-
-                    # Trả về response phù hợp với từng loại tool
-                    if payload_type == "excel_visualize_with_data":
-                        return {
-                            "answer": final_output,
-                            "type": "excel_visualize_with_data",
-                            "payload": clean_payload
-                        }
-                    elif payload_type in ["single_zone_info", "multiple_choices"]:
-                        return {
-                            "answer": final_output,
-                            "type": payload_type,
-                            "payload": clean_payload
-                        }
-                    elif payload_type == "error":
-                        return {
-                            "answer": final_output,
-                            "type": "text"
-                        }
-                    else:
-                        return {
-                            "answer": final_output,
-                            "type": "excel_visualize_with_data",
-                            "payload": clean_payload
-                        }
-                
-                return {"answer": final_output, "type": "text"}
+                # Không có tool payload - trả về text thuần
+                return {"answer": final_output}
 
             except Exception as e:
                 print(f"❌ IZ Agent Error: {e}")
                 return {
                     "answer": "Đã xảy ra lỗi khi xử lý câu hỏi. Vui lòng thử lại.",
-                    "type": "text"
+                    "error": True
                 }
 
         # ===============================
@@ -317,6 +262,12 @@ async def predict(data: Question, request: Request):
         # ===============================
         if CHATBOT_AVAILABLE and hasattr(app, "chatbot"):
             try:
+                # Kiểm tra điều luật cụ thể trước
+                from law_db_query.handler import handle_law_article_query
+                law_article_response = handle_law_article_query(question)
+                if law_article_response:
+                    return {"answer": law_article_response}
+                
                 if inspect.iscoroutinefunction(app.chatbot.invoke):
                     response = await app.chatbot.invoke({"message": question})
                 else:
@@ -333,26 +284,27 @@ async def predict(data: Question, request: Request):
                 else:
                     answer = str(response)
 
+                # Kiểm tra nếu cần liên hệ
+                requires_contact = False
                 if answer and answer.strip() == CONTACT_TRIGGER_RESPONSE.strip():
                     requires_contact = True
+                
+                return {
+                    "answer": answer,
+                    "requires_contact": requires_contact
+                }
 
             except Exception as e:
                 print(f"❌ Chatbot Invoke Error: {e}")
-                answer = "Xin lỗi, hệ thống đang gặp sự cố gián đoạn."
+                return {
+                    "answer": "Xin lỗi, hệ thống đang gặp sự cố gián đoạn.",
+                    "error": True
+                }
         else:
-            answer = "Hệ thống đang bảo trì (Backend unavailable)."
-
-        # Ghi log liên hệ nếu có sđt
-        if data.phone and SHEET_AVAILABLE:
-            try:
-                await run_in_threadpool(app.save_contact_info, question, data.phone, data.name or "")
-            except Exception:
-                pass
-
-        return {
-            "answer": answer,
-            "requires_contact": requires_contact
-        }
+            return {
+                "answer": "Hệ thống đang bảo trì (Backend unavailable).",
+                "error": True
+            }
 
     except Exception as e:
         print(f"❌ Lỗi API: {e}")

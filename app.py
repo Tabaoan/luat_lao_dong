@@ -151,7 +151,7 @@ def load_vectordb():
     retriever = vectordb.as_retriever(search_kwargs={"k": 4})
     print("✅ Qdrant Law retriever sẵn sàng")
     
-    # ===== VSIC 2018 (đối chứng - vẫn dùng Pinecone) =====
+    # ===== VSIC 2018 (đối chứng - đã chuyển sang Qdrant) =====
     try:
         retriever_vsic_2018 = load_vsic_2018_retriever(emb)
         print("✅ VSIC 2018 retriever sẵn sàng")

@@ -1,4 +1,9 @@
 import os
+# PINECONE (COMMENTED - Chuyển sang Qdrant)
+# from pinecone import Pinecone as PineconeClient
+# from langchain_pinecone import Pinecone
+
+# QDRANT (MỚI)
 from qdrant_client import QdrantClient
 from langchain_qdrant import QdrantVectorStore
 
@@ -6,19 +11,14 @@ def get_mst_retriever(embedding):
     """
     Khởi tạo Retriever cho dữ liệu MST bằng Qdrant
     """
-    # 1. Lấy cấu hình từ biến môi trường
+    # ===== QDRANT (MỚI) =====
     QDRANT_URL = os.getenv("QDRANT_URL")
-    #QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    
-    # Tên collection riêng cho MST (Bạn nên thêm dòng này vào file .env)
-    # Ví dụ: QDRANT_COLLECTION_NAME_MST=mst_data
-    COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME_MST", "mst_data")
+    COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME_MST", "masothue")
 
     if not QDRANT_URL:
         print("⚠️ Thiếu QDRANT_URL trong biến môi trường")
         return None
 
-    # 2. Khởi tạo Qdrant Client
     try:
         client = QdrantClient(
             url=QDRANT_URL,
@@ -29,19 +29,52 @@ def get_mst_retriever(embedding):
         print(f"❌ Lỗi kết nối Qdrant MST: {e}")
         return None
 
-    # 3. Kiểm tra xem Collection có tồn tại không
     if not client.collection_exists(COLLECTION_NAME):
         print(f"⚠️ Collection MST '{COLLECTION_NAME}' chưa tồn tại trên Qdrant.")
         return None
 
-    # 4. Khởi tạo VectorStore
-    # Lưu ý: QdrantVectorStore mặc định dùng 'page_content' làm key nội dung.
-    # Nếu dữ liệu cũ của bạn dùng key khác, hãy thêm tham số content_payload_key="..."
+    # Kiểm tra số lượng points (cho phép rỗng để test)
+    collection_info = client.get_collection(COLLECTION_NAME)
+    if collection_info.points_count == 0:
+        print(f"⚠️ Collection MST '{COLLECTION_NAME}' đang rỗng (0 documents)")
+        # Vẫn trả về retriever để có thể test, nhưng sẽ không tìm thấy gì
+    else:
+        print(f"✅ Collection MST '{COLLECTION_NAME}' có {collection_info.points_count} documents")
+
     vectordb = QdrantVectorStore(
         client=client,
         collection_name=COLLECTION_NAME,
         embedding=embedding,
     )
 
-    # 5. Trả về Retriever
     return vectordb.as_retriever(search_kwargs={"k": 5})
+
+    # ===== PINECONE (COMMENTED) =====
+    # QDRANT_URL = os.getenv("QDRANT_URL")
+    # COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME_MST", "mst_data")
+    # 
+    # if not QDRANT_URL:
+    #     print("⚠️ Thiếu QDRANT_URL trong biến môi trường")
+    #     return None
+    # 
+    # try:
+    #     client = QdrantClient(
+    #         url=QDRANT_URL,
+    #         api_key=None,
+    #         timeout=60
+    #     )
+    # except Exception as e:
+    #     print(f"❌ Lỗi kết nối Qdrant MST: {e}")
+    #     return None
+    # 
+    # if not client.collection_exists(COLLECTION_NAME):
+    #     print(f"⚠️ Collection MST '{COLLECTION_NAME}' chưa tồn tại trên Qdrant.")
+    #     return None
+    # 
+    # vectordb = QdrantVectorStore(
+    #     client=client,
+    #     collection_name=COLLECTION_NAME,
+    #     embedding=embedding,
+    # )
+    # 
+    # return vectordb.as_retriever(search_kwargs={"k": 5})

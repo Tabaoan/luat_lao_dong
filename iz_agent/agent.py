@@ -69,6 +69,11 @@ CÁCH CHỌN TOOL:
 PARAMETERS:
 search_flexible_tool:
 1. filter_json: Map câu hỏi thành JSON string với zone_type tự động
+   - QUAN TRỌNG: Nếu câu hỏi có tên tỉnh/thành phố, PHẢI thêm vào filter với key "Tỉnh/Thành phố"
+   - Ví dụ: "KCN tại Hải Phòng" → JSON có "Tỉnh/Thành phố": "Hải Phòng" và "zone_type": "KCN"
+   - Ví dụ: "CCN ở Bình Dương" → JSON có "Tỉnh/Thành phố": "Bình Dương" và "zone_type": "CCN"
+   - Ví dụ: "giá dưới 100" → JSON có "zone_type": "ALL" và numeric_filters
+
 2. view_option: 
    - "list" (mặc định - chỉ danh sách)
    - "chart_price" (biểu đồ giá thuê)

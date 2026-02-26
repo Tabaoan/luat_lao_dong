@@ -116,7 +116,7 @@ def search_flexible_tool(filter_json: str, view_option: str = "list"):
         
     df_res = backend.query_flexible(filters)
     
-    prov_str = filters.get("Tỉnh/Thành phố", "Kết quả")
+    prov_str = filters.get("Tỉnh/Thành phố", "Toàn quốc")
     
     if df_res.empty:
         return {"type": "error", "message": "Không tìm thấy dữ liệu."}
