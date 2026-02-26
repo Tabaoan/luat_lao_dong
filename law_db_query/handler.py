@@ -14,8 +14,7 @@ from law_db_query.db import (
 # ============================
 def handle_law_article_query(message: str) -> str | None:
     """
-    Trả về NỘI DUNG ĐIỀU LUẬT (string)
-    Pipeline KHÔNG can thiệp
+    Trả về nội dung điều luật (string)
     """
     if not is_law_article_query(message):
         return None

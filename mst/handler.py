@@ -1,11 +1,11 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from mst.retriever import get_mst_retriever
-from system_prompts.mst_system import MST_SYSTEM_PROMPT  
+from system_prompts.mst_system import MST_SYSTEM_PROMPT
 
 def handle_mst_query(message: str, llm, embedding):
     retriever = get_mst_retriever(embedding)
     if retriever is None:
-        return None
+        return "Hệ thống tra cứu mã số thuế chưa sẵn sàng."
 
     docs = retriever.get_relevant_documents(message)
     if not docs:
