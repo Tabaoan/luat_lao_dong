@@ -1,11 +1,11 @@
-# 1. Sử dụng Python 3.10 slim để image nhẹ và bảo mật
-FROM python:3.11-slim
+
+FROM python:3.11.4
 
 # 2. Thiết lập thư mục làm việc
 WORKDIR /app
 
 # 3. Cài đặt các thư viện hệ thống cần thiết (nếu có dùng OpenCV hoặc các thư viện C)
-# Nếu chatbot thuần túy xử lý text, bạn có thể bỏ qua bước RUN này để image nhẹ hơn
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
