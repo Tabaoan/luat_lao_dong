@@ -1,0 +1,27 @@
+# Python build artifacts
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Docker & Git
+.git
+.gitignore
+.dockerignore
+Dockerfile
+README*.md
+
+# IDEs
+.vscode/
+.idea/
+
+# Thư mục dữ liệu (Không nên build vào image để giảm dung lượng)
+# Các thư mục này nên được mount qua Volume nếu cần dùng dữ liệu thực tế
+
+# OS rác
+.DS_Store
+Thumbs.db
