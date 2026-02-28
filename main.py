@@ -102,6 +102,7 @@ class Question(BaseModel):
     phone: Optional[str] = None
     name: Optional[str] = None
     url: Optional[str] = None
+    session_id: Optional[str] = "default_session"  # Đã thêm session_id
 
 
 class ContactInfo(BaseModel):
@@ -169,7 +170,8 @@ async def predict(data: Question, request: Request):
 
             response = await run_in_threadpool(
                 app.chatbot.invoke,
-                {"message": question, "law_count": payload["total_laws"]}
+                {"message": question, "law_count": payload["total_laws"]},
+                config={"configurable": {"session_id": data.session_id}} # Truyền config ở đây
             )
             
             return {"answer": response}
@@ -188,6 +190,7 @@ async def predict(data: Question, request: Request):
                 embedding=app.emb
             )
             return {"answer": mst_answer}
+            
         # ===============================
         # 2️⃣ IZ AGENT (XỬ LÝ ẢNH THÔNG MINH)
         # ===============================
@@ -213,7 +216,9 @@ async def predict(data: Question, request: Request):
                             if chart_id and chart_id in CHART_STORE:
                                 real_base64 = CHART_STORE[chart_id]
                                 output["chart_base64"] = real_base64
-                            
+
+                                if chart_id in final_output:
+                                    final_output = final_output.replace(chart_id, real_base64)
                             # Trả về answer + chart base64 + data
                             return {
                                 "answer": final_output,
@@ -268,12 +273,15 @@ async def predict(data: Question, request: Request):
                 if law_article_response:
                     return {"answer": law_article_response}
                 
+                config_data = {"configurable": {"session_id": data.session_id}}
+                
                 if inspect.iscoroutinefunction(app.chatbot.invoke):
-                    response = await app.chatbot.invoke({"message": question})
+                    response = await app.chatbot.invoke({"message": question}, config=config_data)
                 else:
                     response = await run_in_threadpool(
                         app.chatbot.invoke,
-                        {"message": question}
+                        {"message": question},
+                        config=config_data # Truyền config ở đây
                     )
 
                 # Xử lý kết quả trả về
