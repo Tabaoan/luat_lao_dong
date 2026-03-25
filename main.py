@@ -29,6 +29,15 @@ except ImportError as e:
     CHART_STORE = {}
     IZ_AGENT_AVAILABLE = False
 
+try:
+    # Import mn_agent
+    from mn_agent.agent import agent_executor as mn_executor
+    MN_AGENT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: MN Agent không khả dụng: {e}")
+    mn_executor = None
+    MN_AGENT_AVAILABLE = False
+
 # ===============================
 # Import Chatbot từ app.py
 # ===============================
@@ -48,7 +57,143 @@ def is_iz_agent_query(message: str) -> bool:
         "danh sách", "liệt kê", "bao nhiêu", "ở đâu"
     ]
     msg = message.lower()
+    
+    # LOẠI TRỪ câu hỏi về mã ngành trước (ưu tiên MN Agent)
+    mn_keywords = [
+        "mã ngành", "ma nganh", "ngành nghề", "nganh nghe", 
+        "vsic", "mã số ngành", "ma so nganh", "cấp 1", "cấp 2", "cấp 3", "cấp 4"
+    ]
+    
+    # Nếu có từ khóa mã ngành, không route sang IZ Agent
+    if any(kw in msg for kw in mn_keywords):
+        return False
+    
+    # Nếu có "ngành" mà không có KCN/CCN context, không route sang IZ Agent  
+    if "ngành" in msg or "nganh" in msg:
+        if not any(kw in msg for kw in ["kcn", "ccn", "khu công nghiệp", "cụm công nghiệp"]):
+            return False
+    
+    # Nếu chỉ hỏi chung chung "liệt kê" mà không có context KCN/CCN, không route sang IZ Agent
+    if any(kw in msg for kw in ["liệt kê", "liet ke", "danh sách", "danh sach"]):
+        if not any(kw in msg for kw in ["kcn", "ccn", "khu công nghiệp", "cụm công nghiệp", "nhà xưởng", "kho xưởng"]):
+            return False
+    
     return any(k in msg for k in keywords)
+
+
+# ===============================
+# Helper: Router nhận diện câu hỏi về mã ngành
+# ===============================
+def is_mn_agent_query(message: str) -> bool:
+    """
+    Kiểm tra xem câu hỏi có liên quan đến mã ngành nghề không
+    
+    Args:
+        message: Câu hỏi từ người dùng
+    
+    Returns:
+        True nếu là câu hỏi về mã ngành, False nếu không
+    
+    Requirements: 8.2, 8.3, 9.1, 9.2, 9.3, 9.4, 9.6
+    """
+    import re
+    
+    msg = message.lower()
+    
+    # Từ khóa chính về mã ngành (mở rộng)
+    keywords = [
+        "mã ngành", "ma nganh",
+        "ngành nghề", "nganh nghe", 
+        "vsic", "mã số ngành", "ma so nganh",
+        "phân loại ngành", "phan loai nganh",
+        "mã nghề", "ma nghe",
+        "ngành kinh doanh", "nganh kinh doanh",
+        "hoạt động kinh doanh", "hoat dong kinh doanh",
+        "lĩnh vực kinh doanh", "linh vuc kinh doanh"
+    ]
+    
+    # Kiểm tra từ khóa
+    if any(kw in msg for kw in keywords):
+        return True
+    
+    # Kiểm tra pattern mã ngành (VD: "01.11", "47.11.0", "12.34", "1130")
+    if re.search(r'\d{2,4}\.?\d{0,2}\.?\d{0,2}', msg):
+        # Kiểm tra xem có phải là mã ngành không (không phải số điện thoại, năm, etc.)
+        if re.search(r'\b\d{2,4}\.?\d{0,2}\.?\d{0,2}\b', msg):
+            return True
+    
+    # Từ khóa hoạt động kinh doanh phổ biến
+    business_activities = [
+        "trồng", "trong", "chăn nuôi", "chan nuoi", "nuôi", "nuoi",
+        "sản xuất", "san xuat", "chế biến", "che bien", "gia công", "gia cong",
+        "may mặc", "may mac", "dệt", "det", "may", 
+        "bán lẻ", "ban le", "bán buôn", "ban buon", "kinh doanh", 
+        "vận tải", "van tai", "logistics", "kho bãi", "kho bai",
+        "xây dựng", "xay dung", "thi công", "thi cong",
+        "du lịch", "khách sạn", "khach san", "nhà hàng", "nha hang",
+        "giáo dục", "giao duc", "đào tạo", "dao tao",
+        "y tế", "y te", "chăm sóc sức khỏe", "cham soc suc khoe",
+        "công nghệ thông tin", "cong nghe thong tin", "phần mềm", "phan mem",
+        "tài chính", "tai chinh", "ngân hàng", "ngan hang", "bảo hiểm", "bao hiem"
+    ]
+    
+    # Kiểm tra hoạt động kinh doanh
+    if any(activity in msg for activity in business_activities):
+        return True
+    
+    # Từ khóa về cấp ngành (mở rộng)
+    level_keywords = [
+        "cấp 1", "cap 1", "cấp 2", "cap 2", "cấp 3", "cap 3", "cấp 4", "cap 4",
+        "cấp một", "cấp hai", "cấp ba", "cấp bốn",
+        "liệt kê", "liet ke", "danh sách", "danh sach", 
+        "xem", "hiển thị", "hien thi", "cho tôi xem", "cho toi xem",
+        "tất cả", "tat ca", "các ngành", "cac nganh"
+    ]
+    
+    # Kiểm tra từ khóa cấp ngành kết hợp với ngành
+    level_patterns = [
+        "liệt kê.*ngành", "liet ke.*nganh",
+        "danh sách.*ngành", "danh sach.*nganh", 
+        "xem.*ngành", "xem.*nganh",
+        "các ngành.*cấp", "cac nganh.*cap",
+        "ngành.*cấp", "nganh.*cap"
+    ]
+    
+    # Kiểm tra pattern kết hợp
+    import re
+    if any(re.search(pattern, msg) for pattern in level_patterns):
+        return True
+    
+    # Kiểm tra từ khóa cấp ngành
+    if any(kw in msg for kw in level_keywords):
+        # Đảm bảo có từ "ngành" trong câu
+        if "ngành" in msg or "nganh" in msg:
+            return True
+    
+    # Từ khóa về tên ngành cụ thể (để nhận diện câu hỏi tìm ngược)
+    name_query_patterns = [
+        "có mã ngành", "co ma nganh", "thuộc mã ngành", "thuoc ma nganh",
+        "là mã ngành", "la ma nganh", "mã ngành của", "ma nganh cua",
+        "mã ngành cho", "ma nganh cho", "tìm mã ngành cho", "tim ma nganh cho",
+        "ngành.*có mã", "nganh.*co ma", "ngành.*thuộc mã", "nganh.*thuoc ma"
+    ]
+    
+    # Kiểm tra pattern tìm ngược (tên ngành → mã ngành)
+    import re
+    if any(re.search(pattern, msg) for pattern in name_query_patterns):
+        return True
+    
+    # Loại trừ câu hỏi về KCN/CCN (tránh conflict với iz_agent)
+    exclude_kcn = ["kcn", "ccn", "khu công nghiệp", "cụm công nghiệp", "nhà xưởng", "kho xưởng"]
+    if any(kw in msg for kw in exclude_kcn):
+        return False
+    
+    # Loại trừ câu hỏi về mã số thuế (tránh conflict với mst module)
+    exclude_mst = ["mã số thuế", "ma so thue", "mst", "thuế", "thue"]
+    if any(kw in msg for kw in exclude_mst):
+        return False
+    
+    return False
 
 
 # ===============================
@@ -136,8 +281,9 @@ async def home():
             vectordb_status = f"Error: {str(e)}"
 
     return {
-        "message": "✅ Chatbot API đang hoạt động (v2 - IZ Agent Integrated).",
+        "message": "✅ Chatbot API đang hoạt động (v2 - IZ Agent + MN Agent Integrated).",
         "iz_agent_status": "Available" if IZ_AGENT_AVAILABLE else "Not Available",
+        "mn_agent_status": "Available" if MN_AGENT_AVAILABLE else "Not Available",
         "chatbot_status": "Available" if CHATBOT_AVAILABLE else "Not Available",
         "vectordb_status": vectordb_status,
     }
@@ -299,6 +445,66 @@ async def predict(data: Question, request: Request):
                 return {
                     "answer": "Đã xảy ra lỗi khi xử lý câu hỏi. Vui lòng thử lại.",
                     "type": "text"
+                }
+
+        # ===============================
+        # 2.5️⃣ MN AGENT (XỬ LÝ MÃ NGÀNH)
+        # ===============================
+        if MN_AGENT_AVAILABLE and is_mn_agent_query(question):
+            try:
+                # Lấy chat history từ app.py (tương tự iz_agent)
+                if CHATBOT_AVAILABLE and hasattr(app, "get_history"):
+                    try:
+                        history_manager = app.get_history("default_session")
+                        # Lấy 10 tin nhắn gần nhất để tiết kiệm token
+                        current_messages = history_manager.messages[-10:] if history_manager.messages else []
+                        
+                        # Chuyển đổi format cho mn_agent (từ LangChain messages sang tuples)
+                        chat_history = []
+                        for msg in current_messages:
+                            if hasattr(msg, 'type'):
+                                if msg.type == 'human':
+                                    chat_history.append(("human", msg.content))
+                                elif msg.type == 'ai':
+                                    chat_history.append(("ai", msg.content))
+                        
+                    except Exception as e:
+                        print(f"⚠️ Warning: Không thể lấy chat history: {e}")
+                        chat_history = []
+                else:
+                    chat_history = []
+                
+                # Gọi mn_agent executor với input và chat_history
+                mn_result = await run_in_threadpool(
+                    mn_executor.invoke,
+                    {"input": question, "chat_history": chat_history}
+                )
+                
+                # Lấy output từ mn_agent
+                output_text = mn_result.get("output", "Không có phản hồi từ hệ thống mã ngành.")
+                
+                # Lưu user message và AI response vào history_manager
+                if CHATBOT_AVAILABLE and hasattr(app, "get_history"):
+                    try:
+                        history_manager = app.get_history("default_session")
+                        history_manager.add_user_message(question)
+                        history_manager.add_ai_message(output_text)
+                    except Exception as e:
+                        print(f"⚠️ Warning: Không thể lưu chat history: {e}")
+                
+                # Trả về kết quả với prefix đặc biệt
+                return {
+                    "answer": f"🤖 Bot (Mã Ngành Agent):\n{output_text}",
+                    "type": "text",
+                    "requires_contact": False
+                }
+                
+            except Exception as e:
+                print(f"❌ MN Agent Error: {e}")
+                return {
+                    "answer": "Đã xảy ra lỗi khi xử lý câu hỏi về mã ngành. Vui lòng thử lại.",
+                    "type": "text",
+                    "requires_contact": False
                 }
 
         # ===============================

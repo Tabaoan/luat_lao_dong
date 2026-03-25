@@ -20,17 +20,22 @@ def get_mst_retriever(embedding):
         return None
 
     try:
-        client = QdrantClient(
-            url=QDRANT_URL,
-            api_key=None,
-            timeout=60
-        )
+        client = QdrantClient(url=QDRANT_URL)
     except Exception as e:
         print(f"❌ Lỗi kết nối Qdrant MST: {e}")
         return None
 
-    if not client.collection_exists(COLLECTION_NAME):
-        print(f"⚠️ Collection MST '{COLLECTION_NAME}' chưa tồn tại trên Qdrant.")
+    try:
+        # Thử scroll để kiểm tra collection
+        result = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=1,
+            with_payload=False,
+            with_vectors=False
+        )
+        # Nếu scroll thành công, collection tồn tại
+    except Exception as e:
+        print(f"⚠️ Collection MST '{COLLECTION_NAME}' chưa tồn tại trên Qdrant: {e}")
         return None
 
     # Kiểm tra số lượng points (cho phép rỗng để test)
@@ -58,16 +63,15 @@ def get_mst_retriever(embedding):
     #     return None
     # 
     # try:
-    #     client = QdrantClient(
-    #         url=QDRANT_URL,
-    #         api_key=None,
-    #         timeout=60
-    #     )
+    #     client = QdrantClient(url=QDRANT_URL)
     # except Exception as e:
     #     print(f"❌ Lỗi kết nối Qdrant MST: {e}")
     #     return None
     # 
-    # if not client.collection_exists(COLLECTION_NAME):
+    # collections = client.get_collections()
+    # collection_names = [col.name for col in collections.collections]
+    # 
+    # if COLLECTION_NAME not in collection_names:
     #     print(f"⚠️ Collection MST '{COLLECTION_NAME}' chưa tồn tại trên Qdrant.")
     #     return None
     # 

@@ -21,16 +21,21 @@ def load_vsic_2018_retriever(embedding: OpenAIEmbeddings):
         raise RuntimeError("Thiếu cấu hình QDRANT_URL cho VSIC 2018")
 
     try:
-        client = QdrantClient(
-            url=qdrant_url,
-            api_key=None,
-            timeout=60
-        )
+        client = QdrantClient(url=qdrant_url)
     except Exception as e:
         raise RuntimeError(f"Lỗi kết nối Qdrant VSIC 2018: {e}")
 
-    if not client.collection_exists(index_name):
-        raise RuntimeError(f"Qdrant collection VSIC 2018 '{index_name}' không tồn tại")
+    # Thử scroll để kiểm tra collection
+    try:
+        result = client.scroll(
+            collection_name=index_name,
+            limit=1,
+            with_payload=False,
+            with_vectors=False
+        )
+        # Nếu scroll thành công, collection tồn tại
+    except Exception as e:
+        raise RuntimeError(f"Qdrant collection VSIC 2018 '{index_name}' không tồn tại: {str(e)}")
 
     collection_info = client.get_collection(index_name)
     

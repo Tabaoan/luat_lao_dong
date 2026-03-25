@@ -127,19 +127,22 @@ def load_vectordb():
         return None
 
     try:
-        client = QdrantClient(
-            url=QDRANT_URL, 
-            api_key=None, 
-            timeout=60, 
-            prefer_grpc=False,  # Dùng HTTP thay vì gRPC
-            check_compatibility=False
-        )
+        client = QdrantClient(url=QDRANT_URL)
     except Exception as e:
         print(f"❌ Lỗi kết nối Qdrant: {e}")
         return None
 
-    if not client.collection_exists(QDRANT_COLLECTION_NAME_LAW):
-        print(f"⚠️ Collection '{QDRANT_COLLECTION_NAME_LAW}' chưa tồn tại trên Qdrant.")
+    try:
+        # Thử scroll để kiểm tra collection thay vì get_collections
+        result = client.scroll(
+            collection_name=QDRANT_COLLECTION_NAME_LAW,
+            limit=1,
+            with_payload=False,
+            with_vectors=False
+        )
+        # Nếu scroll thành công, collection tồn tại
+    except Exception as e:
+        print(f"⚠️ Collection '{QDRANT_COLLECTION_NAME_LAW}' chưa tồn tại trên Qdrant: {e}")
         return None
 
     vectordb = QdrantVectorStore(
@@ -167,24 +170,36 @@ def get_vectordb_stats() -> Dict:
         if not QDRANT_URL:
             return {"exists": False, "error": "Thiếu QDRANT_URL"}
         
-        client = QdrantClient(
-            url=QDRANT_URL, 
-            api_key=None, 
-            timeout=60, 
-            prefer_grpc=False,
-            check_compatibility=False
-        )
+        client = QdrantClient(url=QDRANT_URL)
         
-        if not client.collection_exists(QDRANT_COLLECTION_NAME_LAW):
-            return {"exists": False, "error": f"Collection '{QDRANT_COLLECTION_NAME_LAW}' không tồn tại"}
+        # Thử scroll để kiểm tra collection thay vì get_collections
+        try:
+            result = client.scroll(
+                collection_name=QDRANT_COLLECTION_NAME_LAW,
+                limit=1,
+                with_payload=False,
+                with_vectors=False
+            )
+            # Nếu scroll thành công, collection tồn tại
+        except Exception as e:
+            return {"exists": False, "error": f"Collection '{QDRANT_COLLECTION_NAME_LAW}' không tồn tại: {str(e)}"}
         
-        collection_info = client.get_collection(QDRANT_COLLECTION_NAME_LAW)
-        
-        return {
-            "exists": True,
-            "total_documents": collection_info.points_count,
-            "dimension": collection_info.config.params.vectors.size
-        }
+        # Thử get collection info (có thể vẫn gây lỗi)
+        try:
+            collection_info = client.get_collection(QDRANT_COLLECTION_NAME_LAW)
+            return {
+                "exists": True,
+                "total_documents": collection_info.points_count,
+                "dimension": collection_info.config.params.vectors.size
+            }
+        except Exception as info_error:
+            # Nếu get_collection fail, ít nhất biết collection tồn tại
+            return {
+                "exists": True,
+                "total_documents": "unknown",
+                "dimension": "unknown",
+                "note": f"Collection exists but info unavailable: {str(info_error)}"
+            }
     except Exception as e:
         return {"exists": False, "error": str(e)}
 
